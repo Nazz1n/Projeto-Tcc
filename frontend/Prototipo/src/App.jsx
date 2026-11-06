@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { HubConnectionBuilder } from '@microsoft/signalr';
-import { api, clearToken, download, getToken, saveToken } from './api';
+import { api, clearToken, DEMO_MODE, download, getToken, saveToken } from './api';
 
 const STATUS_LABELS = {
   NovoContato: 'Novo contato',
@@ -46,6 +46,12 @@ function App() {
     setUser(null);
   };
 
+  const changeDemoProfile = (perfil) => {
+    const updatedUser = { ...user, perfil };
+    sessionStorage.setItem('fretebot.user', JSON.stringify(updatedUser));
+    setUser(updatedUser);
+  };
+
   return (
     <Routes>
       <Route path="/login" element={token ? <Navigate to="/admin" replace /> : <LoginPage onLogin={signIn} />} />
@@ -53,7 +59,7 @@ function App() {
       <Route path="/acesso/:token" element={<PublicFormPage />} />
       <Route path="/form" element={<PublicFormPage />} />
       <Route path="/form/:token" element={<PublicFormPage />} />
-      <Route path="/admin/*" element={token ? <AdminApp user={user} onSignOut={signOut} /> : <Navigate to="/login" replace />} />
+      <Route path="/admin/*" element={token ? <AdminApp user={user} onSignOut={signOut} onProfileChange={changeDemoProfile} /> : <Navigate to="/login" replace />} />
       <Route path="/" element={<Navigate to={token ? '/admin' : '/login'} replace />} />
       <Route path="*" element={<Navigate to={token ? '/admin' : '/login'} replace />} />
     </Routes>
@@ -62,8 +68,8 @@ function App() {
 
 function LoginPage({ onLogin }) {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState(DEMO_MODE ? 'demo@fretebot.local' : '');
+  const [password, setPassword] = useState(DEMO_MODE ? 'demo123' : '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -100,7 +106,7 @@ function LoginPage({ onLogin }) {
         <div className="login-panel-inner">
           <span className="eyebrow">Acesso da equipe</span>
           <h2>Bem-vindo de volta</h2>
-          <p className="muted">Entre com suas credenciais de atendente ou administrador.</p>
+          <p className="muted">{DEMO_MODE ? 'Modo demonstração: os dados de exemplo ficam salvos neste navegador.' : 'Entre com suas credenciais de atendente ou administrador.'}</p>
           <form onSubmit={submit} className="stack-form">
             <label className="field">
               <span>E-mail</span>
@@ -113,14 +119,14 @@ function LoginPage({ onLogin }) {
             {error && <Notice kind="error">{error}</Notice>}
             <button className="button primary wide" type="submit" disabled={busy}>{busy ? 'Validando acesso…' : 'Entrar no painel'} <span aria-hidden="true">→</span></button>
           </form>
-          <p className="login-help">O acesso é protegido e expira conforme a política da sua sessão.</p>
+          <p className="login-help">{DEMO_MODE ? 'Acesso de demonstração preenchido. Clique em “Entrar no painel” para testar.' : 'O acesso é protegido e expira conforme a política da sua sessão.'}</p>
         </div>
       </section>
     </main>
   );
 }
 
-function AdminApp({ user, onSignOut }) {
+function AdminApp({ user, onSignOut, onProfileChange }) {
   const location = useLocation();
   const isAdmin = (user?.perfil || '').toLowerCase().includes('admin');
   const title = useMemo(() => {
@@ -160,7 +166,8 @@ function AdminApp({ user, onSignOut }) {
         <header className="topbar">
           <div><div className="breadcrumb">Fretebot <span>/</span> {title}</div><h1>{title}</h1></div>
           <div className="topbar-right">
-            <span className="connection-status"><i /> Sessão ativa</span>
+            {DEMO_MODE && <label className="profile-switch"><span>Perfil</span><select aria-label="Alternar perfil de demonstração" value={user?.perfil || 'Atendente'} onChange={(event) => onProfileChange(event.target.value)}><option>Administrador</option><option>Atendente</option></select></label>}
+            <span className="connection-status"><i /> {DEMO_MODE ? 'Demonstração local' : 'Sessão ativa'}</span>
             <span className="avatar top-avatar" title={user?.nome}>{initials(user?.nome)}</span>
           </div>
         </header>
@@ -210,6 +217,12 @@ function CentralPage({ user }) {
   }, [refresh]);
 
   useEffect(() => {
+    if (DEMO_MODE) {
+      setRealtimeState('disconnected');
+      setRealtimeError('');
+      return undefined;
+    }
+
     let active = true;
     const connection = new HubConnectionBuilder()
       .withUrl('/hubs/painel', { accessTokenFactory: () => getToken() || '' })
@@ -286,7 +299,7 @@ function CentralPage({ user }) {
       </div>
       <div className="board-summary">
         <span><strong>{totals}</strong> solicitações no funil</span>
-        <span className="refresh-stamp">{realtimeState === 'connected' ? 'Atualizações em tempo real ativas' : 'Atualizações automáticas indisponíveis'}</span>
+        <span className="refresh-stamp">{DEMO_MODE ? 'Dados de demonstração neste navegador' : realtimeState === 'connected' ? 'Atualizações em tempo real ativas' : 'Atualizações automáticas indisponíveis'}</span>
         <button className="button subtle small" onClick={refreshBoard} disabled={loading}>↻ Atualizar</button>
       </div>
       <div className="board-filters">

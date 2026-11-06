@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "dev:demo": "vite --host 0.0.0.0 --mode demo",
+    "dev:api": "vite --host 0.0.0.0 --mode api",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0"
   },

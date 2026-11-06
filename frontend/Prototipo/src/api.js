@@ -1,4 +1,9 @@
+import { demoApi } from './demoApi';
+
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? '';
+export const DEMO_MODE = import.meta.env.DEV
+  && import.meta.env.MODE !== 'api'
+  && import.meta.env.VITE_DEMO_MODE !== 'false';
 const TOKEN_KEY = 'fretebot.token';
 
 function connectionError(path) {
@@ -21,6 +26,8 @@ export function clearToken() {
 }
 
 export async function api(path, options = {}) {
+  if (DEMO_MODE) return demoApi(path, options);
+
   const headers = new Headers(options.headers || {});
   const token = getToken();
 
@@ -64,6 +71,14 @@ export async function api(path, options = {}) {
 }
 
 export async function download(path, filename) {
+  if (DEMO_MODE) {
+    const result = await demoApi(path);
+    const content = typeof result === 'string' ? result : result.content;
+    const blob = new Blob([content], { type: result.contentType || 'text/plain;charset=utf-8' });
+    saveBlob(blob, result.filename || filename);
+    return;
+  }
+
   const headers = new Headers();
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
