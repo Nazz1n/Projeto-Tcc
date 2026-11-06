@@ -1,0 +1,7 @@
+bin/
+obj/
+.vs/
+*.user
+dados-seguranca/
+appsettings.Development.json
+secrets.json

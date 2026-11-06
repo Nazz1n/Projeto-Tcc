@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/CodigoFonte/" />
+  <Folder Name="/CodigoFonte/API/">
+    <Project Path="CodigoFonte/API/Captacao.Api.csproj" />
+  </Folder>
+  <Folder Name="/CodigoFonte/Dominio/">
+    <Project Path="CodigoFonte/Dominio/Captacao.Domain.csproj" />
+  </Folder>
+  <Folder Name="/CodigoFonte/Infraestrutura/">
+    <Project Path="CodigoFonte/Infraestrutura/Captacao.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/Testes/" />
+  <Folder Name="/Testes/Captacao.Testes/">
+    <Project Path="Testes/Captacao.Testes/Captacao.Tests.csproj" />
+  </Folder>
+</Solution>

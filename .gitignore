@@ -1,0 +1,25 @@
+# Arquivos e pastas de segurança
+dados-seguranca/
+
+# Configurações locais e segredos
+appsettings.Development.json
+secrets.json
+.env
+.env.*
+!.env.example
+
+# Arquivos gerados pelo .NET
+bin/
+obj/
+
+# Arquivos gerados pelo front-end
+node_modules/
+dist/
+
+# Configurações locais do Visual Studio
+.vs/
+*.user
+
+# Arquivos do sistema operacional
+.DS_Store
+Thumbs.db
