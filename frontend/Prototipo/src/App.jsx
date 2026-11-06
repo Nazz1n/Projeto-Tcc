@@ -127,6 +127,8 @@ function AdminApp({ user, onSignOut }) {
     if (location.pathname.startsWith('/admin/motoristas')) return 'Motoristas';
     if (location.pathname.startsWith('/admin/cargas')) return 'Cargas';
     if (location.pathname.startsWith('/admin/relatorios')) return 'Relatórios';
+    if (location.pathname.startsWith('/admin/equipe')) return 'Equipe e acessos';
+    if (location.pathname.startsWith('/admin/formulario')) return 'Formulário e documentos';
     return 'Central de atendimento';
   }, [location.pathname]);
 
@@ -139,7 +141,12 @@ function AdminApp({ user, onSignOut }) {
           <NavLink to="/admin" exact icon="◫">Central de atendimento</NavLink>
           <NavLink to="/admin/motoristas" icon="♙">Motoristas</NavLink>
           <NavLink to="/admin/cargas" icon="▰">Cargas</NavLink>
-          {isAdmin && <NavLink to="/admin/relatorios" icon="▥">Relatórios</NavLink>}
+          {isAdmin && <>
+            <div className="sidebar-caption admin-nav-caption">ADMINISTRAÇÃO</div>
+            <NavLink to="/admin/formulario" icon="▤">Formulário e documentos</NavLink>
+            <NavLink to="/admin/equipe" icon="♧">Equipe e acessos</NavLink>
+            <NavLink to="/admin/relatorios" icon="▥">Relatórios</NavLink>
+          </>}
         </nav>
         <div className="sidebar-bottom">
           <div className="sidebar-user">
@@ -163,6 +170,8 @@ function AdminApp({ user, onSignOut }) {
             <Route path="motoristas" element={<MotoristasPage />} />
             <Route path="cargas" element={<CargasPage isAdmin={isAdmin} />} />
             {isAdmin && <Route path="relatorios" element={<ReportsPage />} />}
+            {isAdmin && <Route path="formulario" element={<FormularioConfigPage />} />}
+            {isAdmin && <Route path="equipe" element={<EquipePage />} />}
             <Route path="*" element={<Navigate to="/admin" replace />} />
           </Routes>
         </main>
@@ -184,6 +193,8 @@ function CentralPage({ user }) {
   const [showNew, setShowNew] = useState(false);
   const [selected, setSelected] = useState(null);
   const [refresh, setRefresh] = useState(0);
+  const [priorityFilter, setPriorityFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [realtimeState, setRealtimeState] = useState('connecting');
   const [realtimeError, setRealtimeError] = useState('');
 
@@ -245,7 +256,20 @@ function CentralPage({ user }) {
     };
   }, []);
 
-  const totals = columns.reduce((total, column) => total + (column.solicitacoes?.length || 0), 0);
+  const requests = columns.flatMap((column) => column.solicitacoes || []);
+  const totals = requests.length;
+  const openCount = columns
+    .filter((column) => !['Contratado', 'Encerrado'].includes(column.status))
+    .reduce((total, column) => total + (column.solicitacoes?.length || 0), 0);
+  const readyCount = columns.find((column) => column.status === 'ProntoParaAnalise')?.solicitacoes?.length || 0;
+  const highPriorityCount = requests.filter((item) => item.prioridade === 'Alta').length;
+  const hiredCount = columns.find((column) => column.status === 'Contratado')?.solicitacoes?.length || 0;
+  const visibleColumns = columns
+    .filter((column) => !statusFilter || column.status === statusFilter)
+    .map((column) => ({
+      ...column,
+      solicitacoes: (column.solicitacoes || []).filter((item) => !priorityFilter || item.prioridade === priorityFilter),
+    }));
   const refreshBoard = () => setRefresh((value) => value + 1);
 
   return (
@@ -254,16 +278,27 @@ function CentralPage({ user }) {
         <div><h2>Funil de captação</h2><p>Acompanhe cada solicitação e avance o atendimento conforme a operação.</p></div>
         <button className="button primary" onClick={() => setShowNew(true)}><span>＋</span> Iniciar atendimento</button>
       </section>
+      <div className="kanban-kpis">
+        <article className="surface metric-card"><span>Solicitações abertas</span><strong>{openCount}</strong></article>
+        <article className="surface metric-card"><span>Prontas para análise</span><strong>{readyCount}</strong></article>
+        <article className="surface metric-card"><span>Prioridade alta</span><strong>{highPriorityCount}</strong></article>
+        <article className="surface metric-card"><span>Contratadas</span><strong>{hiredCount}</strong></article>
+      </div>
       <div className="board-summary">
         <span><strong>{totals}</strong> solicitações no funil</span>
         <span className="refresh-stamp">{realtimeState === 'connected' ? 'Atualizações em tempo real ativas' : 'Atualizações automáticas indisponíveis'}</span>
         <button className="button subtle small" onClick={refreshBoard} disabled={loading}>↻ Atualizar</button>
       </div>
+      <div className="board-filters">
+        <label className="field compact-field"><span>Filtrar por status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="">Todos os status</option>{columns.map((column) => <option value={column.status} key={column.status}>{column.rotulo}</option>)}</select></label>
+        <label className="field compact-field"><span>Filtrar por prioridade</span><select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}><option value="">Todas</option><option>Alta</option><option>Media</option><option>Baixa</option></select></label>
+        {(statusFilter || priorityFilter) && <button className="button subtle small clear-filters" onClick={() => { setStatusFilter(''); setPriorityFilter(''); }}>Limpar filtros</button>}
+      </div>
       {error && <Notice kind="error">{error}</Notice>}
       {realtimeError && <Notice kind="info">{realtimeError}</Notice>}
       {loading ? <Loading label="Carregando solicitações…" /> : (
         <div className="kanban-board">
-          {columns.map((column, index) => (
+          {visibleColumns.map((column, index) => (
             <section className={`kanban-column ${STATUS_COLORS[index % STATUS_COLORS.length]}`} key={column.status}>
               <header className="column-heading">
                 <span className="column-indicator" />
@@ -271,7 +306,7 @@ function CentralPage({ user }) {
                 <span className="count-badge">{column.solicitacoes?.length || 0}</span>
               </header>
               <div className="column-cards">
-                {column.solicitacoes?.map((item) => <RequestCard key={item.solicitacaoId} item={item} onClick={() => setSelected(item)} />)}
+                {column.solicitacoes?.map((item) => <RequestCard key={item.solicitacaoId} item={item} status={column.status} onClick={() => setSelected(item)} />)}
                 {!column.solicitacoes?.length && <div className="empty-column">Nenhuma solicitação nesta etapa</div>}
               </div>
             </section>
@@ -285,16 +320,17 @@ function CentralPage({ user }) {
   );
 }
 
-function RequestCard({ item, onClick }) {
+function RequestCard({ item, status, onClick }) {
   return (
     <button className="request-card" onClick={onClick}>
-      <div className="request-card-top"><span className={`priority ${priorityClass(item.prioridade)}`}>{item.prioridade || 'Sem prioridade'}</span><span className="request-date">{formatDate(item.dataCriacao)}</span></div>
+      <div className="request-card-top"><span className="request-number">#{item.solicitacaoId}</span><span className={`priority ${priorityClass(item.prioridade)}`}>{item.prioridade || 'Sem prioridade'}</span><span className="request-date">{formatDate(item.dataCriacao)}</span></div>
       <strong className="request-name">{item.nomeMotorista || 'Motorista sem nome'}</strong>
       <span className="request-phone">{formatPhone(item.telefone)}</span>
       <div className="request-card-bottom">
         <span>{item.cargaDescricao || 'Sem carga vinculada'}</span>
         {item.pendenciasDocumentais > 0 && <span className="pending-count">{item.pendenciasDocumentais} pend.</span>}
       </div>
+      <span className="request-status">{STATUS_LABELS[status] || status} · {compatibilityLabel(item.compatibilidade)}</span>
       {(item.placa || item.compatibilidade) && <div className="request-tags">{item.placa && <span>{item.placa}</span>}{item.compatibilidade && item.compatibilidade !== 'NaoAplicavel' && <span>{compatibilityLabel(item.compatibilidade)}</span>}</div>}
     </button>
   );
@@ -475,7 +511,7 @@ function RequestDetails({ id, currentUserId, onClose, onUpdated }) {
                     <button className="button mini success" disabled={busy} onClick={() => validateDocument(doc.documentoId, 'Validado')}>Validar</button>
                     <button className="button mini danger" disabled={busy} onClick={() => validateDocument(doc.documentoId, 'Reprovado')}>Reprovar</button>
                   </>}
-                  {doc.documentoId && <button className="button mini subtle" onClick={() => downloadDocument(doc.documentoId, setError)}>Baixar</button>}
+                  {doc.documentoId && <button className="button mini subtle" onClick={() => downloadDocument(doc.documentoId, doc.nomeOriginal, setError)}>Baixar</button>}
                 </div>
               </div>
             ))}
@@ -494,9 +530,9 @@ function RequestDetails({ id, currentUserId, onClose, onUpdated }) {
   );
 }
 
-async function downloadDocument(id, setError) {
+async function downloadDocument(id, filename, setError) {
   try {
-    await download(`/Documentos/${id}/arquivo`, `documento-${id}`);
+    await download(`/Documentos/${id}/arquivo`, filename || `documento-${id}`);
   } catch (requestError) {
     setError(requestError.message);
   }
@@ -509,6 +545,9 @@ function MotoristasPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [selectedDriver, setSelectedDriver] = useState(null);
+  const [selectedRequestId, setSelectedRequestId] = useState(null);
+  const [refresh, setRefresh] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -520,7 +559,10 @@ function MotoristasPage() {
       .catch((requestError) => { if (active) setError(requestError.message); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [term]);
+  }, [term, refresh]);
+
+  const ongoingCount = drivers.filter((driver) => driver.statusUltimaSolicitacao && !['Contratado', 'Encerrado'].includes(driver.statusUltimaSolicitacao)).length;
+  const capacityCount = drivers.filter((driver) => driver.capacidadeToneladas != null).length;
 
   return (
     <>
@@ -528,6 +570,12 @@ function MotoristasPage() {
         <div><h2>Base de motoristas</h2><p>Consulte os contatos e os dados da solicitação mais recente.</p></div>
         <button className="button primary" onClick={() => setShowCreate(true)}>＋ Cadastrar motorista</button>
       </section>
+      <div className="driver-kpis">
+        <article className="surface metric-card"><span>Motoristas cadastrados</span><strong>{loading ? '…' : drivers.length}</strong></article>
+        <article className="surface metric-card"><span>Com telefone informado</span><strong>{loading ? '…' : drivers.filter((driver) => driver.telefone).length}</strong></article>
+        <article className="surface metric-card"><span>Solicitações em andamento</span><strong>{loading ? '…' : ongoingCount}</strong></article>
+        <article className="surface metric-card"><span>Veículos com capacidade</span><strong>{loading ? '…' : capacityCount}</strong></article>
+      </div>
       <section className="surface table-surface">
         <form className="table-toolbar" onSubmit={(event) => { event.preventDefault(); setTerm(search.trim()); }}>
           <div><strong>{loading ? 'Carregando…' : `${drivers.length} motoristas`}</strong><span>Pesquise por nome, telefone ou placa.</span></div>
@@ -535,20 +583,69 @@ function MotoristasPage() {
         </form>
         {error && <Notice kind="error">{error}</Notice>}
         {loading ? <Loading label="Buscando motoristas…" /> : drivers.length ? (
-          <div className="table-scroll"><table><thead><tr><th>Motorista</th><th>Telefone</th><th>Veículo</th><th>Última solicitação</th><th>Cadastro</th></tr></thead><tbody>
+          <div className="table-scroll"><table className="driver-table"><thead><tr><th>Motorista</th><th>Telefone / WhatsApp</th><th>CPF</th><th>Placa</th><th>Capacidade</th><th>Última solicitação</th><th>Situação</th><th></th></tr></thead><tbody>
             {drivers.map((driver) => <tr key={driver.motoristaId}>
-              <td><div className="table-person"><span className="avatar soft-avatar">{initials(driver.nomeCompleto || 'M')}</span><span><strong>{driver.nomeCompleto || 'Nome pendente'}</strong><small>{driver.email || driver.cpfMascarado || 'Dados não informados'}</small></span></div></td>
-              <td>{formatPhone(driver.telefone)}</td>
-              <td>{driver.placa ? <><strong>{driver.placa}</strong>{driver.capacidadeToneladas && <small className="table-subline">{driver.capacidadeToneladas} toneladas</small>}</> : '—'}</td>
+              <td><div className="table-person"><span className="avatar soft-avatar">{initials(driver.nomeCompleto || 'M')}</span><span><strong>{driver.nomeCompleto || 'Nome pendente'}</strong><small>{driver.email || 'E-mail não informado'}</small></span></div></td>
+              <td><a className="whatsapp-link" href={`https://wa.me/${String(driver.telefone || '').replace(/\D/g, '')}`} target="_blank" rel="noreferrer">{formatPhone(driver.telefone)} ↗</a></td>
+              <td>{driver.cpfMascarado || '—'}</td>
+              <td>{driver.placa || '—'}</td>
+              <td>{driver.capacidadeToneladas == null ? '—' : `${driver.capacidadeToneladas} t`}</td>
+              <td>{driver.ultimaSolicitacaoId ? `#${driver.ultimaSolicitacaoId}` : '—'}</td>
               <td>{driver.statusUltimaSolicitacao ? <span className={`status-pill ${statusClass(driver.statusUltimaSolicitacao)}`}>{STATUS_LABELS[driver.statusUltimaSolicitacao] || driver.statusUltimaSolicitacao}</span> : 'Sem solicitação'}</td>
-              <td>{formatDate(driver.dataCadastro)}</td>
+              <td><button className="button mini subtle" onClick={() => setSelectedDriver(driver.motoristaId)}>Ver cadastro</button></td>
             </tr>)}
           </tbody></table></div>
         ) : <EmptyState title="Nenhum motorista encontrado" detail={term ? 'Tente outra busca.' : 'Os contatos criados no atendimento vão aparecer aqui.'} />}
       </section>
-      {showCreate && <CreateDriverModal onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); setTerm(''); }} />}
+      {showCreate && <CreateDriverModal onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); setTerm(''); setRefresh((value) => value + 1); }} />}
+      {selectedDriver && <DriverDetailsModal id={selectedDriver} onClose={() => setSelectedDriver(null)} onOpenRequest={(id) => { setSelectedDriver(null); setSelectedRequestId(id); }} />}
+      {selectedRequestId && <RequestDetails id={selectedRequestId} onClose={() => setSelectedRequestId(null)} onUpdated={() => { setSelectedRequestId(null); setRefresh((value) => value + 1); }} />}
     </>
   );
+}
+
+function DriverDetailsModal({ id, onClose, onOpenRequest }) {
+  const [driver, setDriver] = useState(null);
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([api(`/Motoristas/${id}`), api(`/Solicitacoes/motorista/${id}`)])
+      .then(([driverResult, requestResult]) => {
+        if (!active) return;
+        setDriver({ ...driverResult, compatibilidadeUltimaSolicitacao: requestResult[0]?.compatibilidade });
+        setRequests(requestResult);
+      })
+      .catch((requestError) => { if (active) setError(requestError.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [id]);
+
+  return <Modal title="Ficha do motorista" onClose={onClose}>
+    {loading ? <Loading label="Carregando cadastro…" /> : driver && <>
+      {error && <Notice kind="error">{error}</Notice>}
+      <div className="detail-header"><div><h3>{driver.nomeCompleto || 'Motorista sem nome'}</h3><span>{formatPhone(driver.telefone)} · Cadastrado em {formatDate(driver.dataCadastro)}</span></div></div>
+      <div className="detail-grid driver-detail-grid">
+        <div className="detail-item"><span>CPF</span><strong>{driver.cpfMascarado || 'Não informado'}</strong></div>
+        <div className="detail-item"><span>E-mail</span><strong>{driver.email || 'Não informado'}</strong></div>
+        <div className="detail-item"><span>RNTRC</span><strong>{driver.rntrc || 'Não informado'}</strong></div>
+        <div className="detail-item"><span>Veículo</span><strong>{driver.placa || 'Não informado'}</strong></div>
+        <div className="detail-item"><span>Capacidade</span><strong>{driver.capacidadeToneladas == null ? 'Não informada' : `${driver.capacidadeToneladas} t`}</strong></div>
+        <div className="detail-item"><span>Compatibilidade recente</span><strong>{compatibilityLabel(driver.compatibilidadeUltimaSolicitacao)}</strong></div>
+      </div>
+      <section className="documents-panel">
+        <h4>Histórico de solicitações</h4>
+        {!requests.length ? <p className="muted">Nenhuma solicitação vinculada a este motorista.</p> : requests.map((request) => <div className="driver-history-row" key={request.solicitacaoId}>
+          <div><strong>Solicitação #{request.solicitacaoId}</strong><small>{formatDate(request.dataCriacao)} · {request.cargaDescricao || 'Sem carga vinculada'}</small></div>
+          <span className={`status-pill ${statusClass(request.status)}`}>{STATUS_LABELS[request.status] || request.status}</span>
+          <button className="button mini subtle" onClick={() => onOpenRequest(request.solicitacaoId)}>Abrir</button>
+        </div>)}
+      </section>
+    </>}
+    {error && !driver && <Notice kind="error">{error}</Notice>}
+  </Modal>;
 }
 
 function CreateDriverModal({ onClose, onCreated }) {
@@ -580,11 +677,208 @@ function CreateDriverModal({ onClose, onCreated }) {
   </Modal>;
 }
 
+function EquipePage() {
+  const [members, setMembers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [editing, setEditing] = useState(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    api('/Atendentes')
+      .then((result) => { if (active) setMembers(result); })
+      .catch((requestError) => { if (active) setError(requestError.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [refresh]);
+
+  async function toggleActive(member) {
+    const action = member.ativo ? 'inativar' : 'reativar';
+    setError('');
+    try {
+      await api(`/Atendentes/${member.atendenteId}/${action}`, { method: 'PATCH' });
+      setRefresh((value) => value + 1);
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  }
+
+  function reload() {
+    setEditing(null);
+    setShowCreate(false);
+    setRefresh((value) => value + 1);
+  }
+
+  return (
+    <>
+      <section className="page-intro">
+        <div><h2>Equipe e acessos</h2><p>Gerencie os usuários internos e consulte seus perfis e permissões.</p></div>
+        <button className="button primary" onClick={() => setShowCreate(true)}>＋ Adicionar usuário</button>
+      </section>
+      {error && <Notice kind="error">{error}</Notice>}
+      <section className="surface table-surface team-table-surface">
+        <div className="table-toolbar"><div><strong>Usuários cadastrados</strong><span>Administradores e atendentes com acesso ao painel.</span></div><span className="count-badge">{members.length}</span></div>
+        {loading ? <Loading label="Carregando equipe…" /> : members.length ? (
+          <div className="table-scroll"><table><thead><tr><th>Usuário</th><th>Perfil</th><th>Estado</th><th>Permissões principais</th><th>Ações</th></tr></thead><tbody>
+            {members.map((member) => {
+              const isMemberAdmin = (member.perfil || '').toLowerCase().includes('admin');
+              return <tr key={member.atendenteId}>
+                <td><div className="table-person"><span className="avatar soft-avatar">{initials(member.nome)}</span><span><strong>{member.nome}</strong><small>{member.email}</small></span></div></td>
+                <td><span className={`status-pill ${isMemberAdmin ? 'violet-pill' : 'neutral'}`}>{member.perfil}</span></td>
+                <td><span className={`status-pill ${member.ativo ? 'positive' : 'negative'}`}>{member.ativo ? 'Ativo' : 'Inativo'}</span></td>
+                <td className="permission-summary">{isMemberAdmin ? 'Configuração, cargas, equipe e relatórios' : 'Kanban, motoristas, documentos e solicitações'}</td>
+                <td><div className="team-actions">
+                  <button className="button mini subtle" onClick={() => setEditing(member)}>Editar</button>
+                  <button className={`button mini ${member.ativo ? 'danger' : 'success'}`} onClick={() => toggleActive(member)}>{member.ativo ? 'Desativar' : 'Reativar'}</button>
+                </div></td>
+              </tr>;
+            })}
+          </tbody></table></div>
+        ) : <EmptyState title="Nenhum usuário cadastrado" detail="Adicione usuários para que a equipe possa acessar o painel." />}
+      </section>
+      {(showCreate || editing) && <AtendenteModal member={editing} onClose={() => { setShowCreate(false); setEditing(null); }} onSaved={reload} />}
+    </>
+  );
+}
+
+function AtendenteModal({ member, onClose, onSaved }) {
+  const [form, setForm] = useState({ nome: member?.nome || '', email: member?.email || '', senha: '' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function submit(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      await api(member ? `/Atendentes/${member.atendenteId}` : '/Atendentes', {
+        method: member ? 'PUT' : 'POST',
+        body: JSON.stringify(member ? { nome: form.nome, email: form.email } : form),
+      });
+      onSaved();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <Modal title={member ? 'Editar usuário' : 'Adicionar atendente'} onClose={onClose}>
+    <form className="stack-form" onSubmit={submit}>
+      <p className="muted">{member ? 'Atualize os dados de acesso do usuário.' : 'Novos usuários são cadastrados com o perfil Atendente.'}</p>
+      <label className="field"><span>Nome completo</span><input autoFocus required maxLength="150" value={form.nome} onChange={(event) => setForm({ ...form, nome: event.target.value })} /></label>
+      <label className="field"><span>E-mail</span><input required type="email" maxLength="150" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
+      {!member && <label className="field"><span>Senha inicial</span><input required type="password" minLength="10" maxLength="128" value={form.senha} onChange={(event) => setForm({ ...form, senha: event.target.value })} /><small className="field-hint">Use pelo menos 10 caracteres.</small></label>}
+      {error && <Notice kind="error">{error}</Notice>}
+      <div className="modal-actions"><button className="button subtle" type="button" onClick={onClose}>Cancelar</button><button className="button primary" disabled={busy}>{busy ? 'Salvando…' : 'Salvar usuário'}</button></div>
+    </form>
+  </Modal>;
+}
+
+function FormularioConfigPage() {
+  const [fields, setFields] = useState([]);
+  const [draft, setDraft] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    api('/CamposFormulario')
+      .then((result) => {
+        if (!active) return;
+        setFields(result);
+        setDraft(result);
+      })
+      .catch((requestError) => { if (active) setError(requestError.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  function updateDraft(id, changes) {
+    setDraft((current) => current.map((field) => field.campoFormularioId === id ? { ...field, ...changes } : field));
+    setNotice('');
+  }
+
+  async function saveConfiguration() {
+    setSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      for (const field of draft) {
+        const saved = fields.find((item) => item.campoFormularioId === field.campoFormularioId);
+        if (!saved) continue;
+        let current = saved;
+
+        if (field.categoria === 'Documento' && current.ativo !== field.ativo) {
+          current = await api(`/CamposFormulario/${field.campoFormularioId}/${field.ativo ? 'ativar' : 'desativar'}`, { method: 'PATCH' });
+          const updatedField = current;
+          setFields((items) => items.map((item) => item.campoFormularioId === updatedField.campoFormularioId ? updatedField : item));
+        }
+
+        const obrigatorio = current.ativo ? field.obrigatorio : false;
+        if (current.rotulo !== field.rotulo || current.obrigatorio !== obrigatorio) {
+          current = await api(`/CamposFormulario/${field.campoFormularioId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ rotulo: field.rotulo, obrigatorio }),
+          });
+          const updatedField = current;
+          setFields((items) => items.map((item) => item.campoFormularioId === updatedField.campoFormularioId ? updatedField : item));
+        }
+      }
+      const current = await api('/CamposFormulario');
+      setFields(current);
+      setDraft(current);
+      setNotice('Configurações salvas e aplicadas ao formulário.');
+    } catch (requestError) {
+      setError(`${requestError.message} As alterações concluídas foram mantidas; revise e salve novamente.`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const formFields = draft.filter((field) => field.categoria === 'Campo');
+  const documents = draft.filter((field) => field.categoria === 'Documento');
+
+  function renderField(field, document = false) {
+    return <div className={`config-row ${!field.ativo ? 'inactive' : ''}`} key={field.campoFormularioId}>
+      <label className="config-label"><strong>{field.rotulo}</strong><small>{field.chave}</small></label>
+      {document && <label className="config-toggle"><span>Obrigatório</span><input type="checkbox" checked={field.obrigatorio} disabled={!field.ativo} onChange={(event) => updateDraft(field.campoFormularioId, { obrigatorio: event.target.checked })} /><i /></label>}
+      {document && <label className="config-toggle"><span>Ativo</span><input type="checkbox" checked={field.ativo} onChange={(event) => updateDraft(field.campoFormularioId, { ativo: event.target.checked, ...(event.target.checked ? {} : { obrigatorio: false }) })} /><i /></label>}
+      {!document && <label className="config-toggle"><span>Obrigatório</span><input type="checkbox" checked={field.obrigatorio} onChange={(event) => updateDraft(field.campoFormularioId, { obrigatorio: event.target.checked })} /><i /></label>}
+    </div>;
+  }
+
+  return <>
+    <section className="page-intro">
+      <div><h2>Configuração do formulário</h2><p>Defina os campos e documentos que serão solicitados aos motoristas.</p></div>
+      <button className="button primary" onClick={saveConfiguration} disabled={loading || saving}>{saving ? 'Salvando…' : 'Salvar configurações'}</button>
+    </section>
+    {error && <Notice kind="error">{error}</Notice>}
+    {notice && <Notice kind="success">{notice}</Notice>}
+    {loading ? <Loading label="Carregando configurações…" /> : <div className="config-grid">
+      <section className="surface config-panel">
+        <header className="config-panel-heading"><div><h3>Campos do formulário</h3><p>Informações preenchidas pelo motorista.</p></div><span className="status-pill neutral">{formFields.length} campos</span></header>
+        <div className="config-list">{formFields.map((field) => renderField(field))}</div>
+      </section>
+      <section className="surface config-panel">
+        <header className="config-panel-heading"><div><h3>Documentos exigidos</h3><p>Arquivos considerados na triagem da solicitação.</p></div><span className="status-pill neutral">{documents.filter((field) => field.ativo).length} ativos</span></header>
+        <div className="config-list">{documents.map((field) => renderField(field, true))}</div>
+        <Notice kind="info">Um documento inativo não pode ser obrigatório. Desativá-lo também remove a obrigatoriedade.</Notice>
+      </section>
+    </div>}
+  </>;
+}
+
 function CargasPage({ isAdmin }) {
   const [loads, setLoads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [showCreate, setShowCreate] = useState(false);
+  const [editingLoad, setEditingLoad] = useState(undefined);
   const [refresh, setRefresh] = useState(0);
 
   useEffect(() => {
@@ -609,31 +903,42 @@ function CargasPage({ isAdmin }) {
     }
   }
 
+  const availableCount = loads.filter((load) => load.status === 'Disponivel').length;
+  const contractedCount = loads.filter((load) => load.status === 'Contratada').length;
+  const restrictedCount = loads.filter((load) => load.capacidadeMinimaToneladas != null).length;
+
   return (
     <>
       <section className="page-intro">
-        <div><h2>Cargas disponíveis</h2><p>Cadastre oportunidades e acompanhe o status das cargas.</p></div>
-        {isAdmin && <button className="button primary" onClick={() => setShowCreate(true)}>＋ Nova carga</button>}
+        <div><h2>Cargas cadastradas</h2><p>Consulte as oportunidades de transporte e suas condições.</p></div>
+        {isAdmin && <button className="button primary" onClick={() => setEditingLoad(null)}>＋ Cadastrar carga</button>}
       </section>
-      {!isAdmin && <Notice kind="info">Somente administradores podem cadastrar ou alterar o status das cargas.</Notice>}
+      <div className="load-kpis">
+        <article className="surface metric-card"><span>Cargas cadastradas</span><strong>{loads.length}</strong></article>
+        <article className="surface metric-card"><span>Disponíveis</span><strong>{availableCount}</strong></article>
+        <article className="surface metric-card"><span>Contratadas</span><strong>{contractedCount}</strong></article>
+        <article className="surface metric-card"><span>Com capacidade mínima</span><strong>{restrictedCount}</strong></article>
+      </div>
+      {!isAdmin && <Notice kind="info">O perfil Atendente pode consultar as cargas; cadastro e edição são exclusivos do Administrador.</Notice>}
       {error && <Notice kind="error">{error}</Notice>}
-      <section className="load-grid">
-        {loading ? <Loading label="Carregando cargas…" /> : loads.length ? loads.map((load) => (
-          <article className="surface load-card" key={load.cargaId}>
-            <div className="load-card-top"><span className={`status-pill ${load.status === 'Disponivel' ? 'positive' : 'neutral'}`}>{load.status === 'Disponivel' ? 'Disponível' : 'Contratada'}</span><span className="load-number">#{load.cargaId}</span></div>
-            <div className="route-line"><div><small>ORIGEM</small><strong>{load.origem}</strong></div><span aria-hidden="true">→</span><div><small>DESTINO</small><strong>{load.destino}</strong></div></div>
-            <div className="load-card-bottom"><span>Capacidade mínima <strong>{load.capacidadeMinimaToneladas ? `${load.capacidadeMinimaToneladas} t` : 'Não definida'}</strong></span><span>{formatDate(load.dataCadastro)}</span></div>
-            {isAdmin && <button className="button subtle small full-button" onClick={() => changeStatus(load)}>{load.status === 'Disponivel' ? 'Marcar como contratada' : 'Reabrir carga'}</button>}
-          </article>
-        )) : <EmptyState title="Nenhuma carga cadastrada" detail="As novas cargas aparecerão nesta lista." />}
+      <section className="surface table-surface load-table-surface">
+        {loading ? <Loading label="Carregando cargas…" /> : loads.length ? <div className="table-scroll"><table><thead><tr><th>Carga</th><th>Origem</th><th>Destino</th><th>Capacidade mínima</th><th>Status</th>{isAdmin && <th>Ações</th>}</tr></thead><tbody>
+          {loads.map((load) => <tr key={load.cargaId}>
+            <td><strong>C-{String(load.cargaId).padStart(3, '0')}</strong><small className="table-subline">Carga registrada</small></td>
+            <td>{load.origem}</td><td>{load.destino}</td>
+            <td>{load.capacidadeMinimaToneladas == null ? 'Sem restrição' : `${load.capacidadeMinimaToneladas} t`}</td>
+            <td><span className={`status-pill ${load.status === 'Disponivel' ? 'positive' : 'neutral'}`}>{load.status === 'Disponivel' ? 'Disponível' : 'Contratada'}</span></td>
+            {isAdmin && <td><div className="team-actions"><button className="button mini subtle" onClick={() => setEditingLoad(load)}>Editar</button><button className="button mini subtle" onClick={() => changeStatus(load)}>{load.status === 'Disponivel' ? 'Contratar' : 'Reabrir'}</button></div></td>}
+          </tr>)}
+        </tbody></table></div> : <EmptyState title="Nenhuma carga cadastrada" detail="As novas cargas aparecerão nesta lista." />}
       </section>
-      {showCreate && <CreateLoadModal onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); setRefresh((value) => value + 1); }} />}
+      {editingLoad !== undefined && <CreateLoadModal load={editingLoad} onClose={() => setEditingLoad(undefined)} onCreated={() => { setEditingLoad(undefined); setRefresh((value) => value + 1); }} />}
     </>
   );
 }
 
-function CreateLoadModal({ onClose, onCreated }) {
-  const [form, setForm] = useState({ origem: '', destino: '', capacidadeMinimaToneladas: '' });
+function CreateLoadModal({ load, onClose, onCreated }) {
+  const [form, setForm] = useState({ origem: load?.origem || '', destino: load?.destino || '', capacidadeMinimaToneladas: load?.capacidadeMinimaToneladas ?? '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   async function submit(event) {
@@ -641,8 +946,8 @@ function CreateLoadModal({ onClose, onCreated }) {
     setBusy(true);
     setError('');
     try {
-      await api('/Cargas', {
-        method: 'POST',
+      await api(load ? `/Cargas/${load.cargaId}` : '/Cargas', {
+        method: load ? 'PUT' : 'POST',
         body: JSON.stringify({
           origem: form.origem,
           destino: form.destino,
@@ -656,13 +961,13 @@ function CreateLoadModal({ onClose, onCreated }) {
       setBusy(false);
     }
   }
-  return <Modal title="Cadastrar carga" onClose={onClose}>
+  return <Modal title={load ? 'Editar carga' : 'Cadastrar carga'} onClose={onClose}>
     <form className="stack-form" onSubmit={submit}>
       <label className="field"><span>Origem</span><input required maxLength="150" value={form.origem} onChange={(event) => setForm({ ...form, origem: event.target.value })} /></label>
       <label className="field"><span>Destino</span><input required maxLength="150" value={form.destino} onChange={(event) => setForm({ ...form, destino: event.target.value })} /></label>
       <label className="field"><span>Capacidade mínima (toneladas)</span><input type="number" min="0.01" max="999999.99" step="0.01" value={form.capacidadeMinimaToneladas} onChange={(event) => setForm({ ...form, capacidadeMinimaToneladas: event.target.value })} placeholder="Opcional" /></label>
       {error && <Notice kind="error">{error}</Notice>}
-      <div className="modal-actions"><button className="button subtle" type="button" onClick={onClose}>Cancelar</button><button className="button primary" disabled={busy}>{busy ? 'Salvando…' : 'Salvar carga'}</button></div>
+      <div className="modal-actions"><button className="button subtle" type="button" onClick={onClose}>Cancelar</button><button className="button primary" disabled={busy}>{busy ? 'Salvando…' : load ? 'Salvar alterações' : 'Salvar carga'}</button></div>
     </form>
   </Modal>;
 }
@@ -704,6 +1009,8 @@ function ReportsPage() {
     ['Contratadas', metrics.contratadas ?? 0],
     ['Taxa de conversão', `${metrics.taxaConversaoPercentual ?? 0}%`],
   ] : [];
+  const statusEntries = Object.entries(metrics?.porStatus || {});
+  const maxStatusCount = Math.max(1, ...statusEntries.map(([, count]) => count));
 
   return (
     <>
@@ -721,9 +1028,14 @@ function ReportsPage() {
         <>
           <div className="metric-grid">{cards.map(([label, value]) => <article className="surface metric-card" key={label}><span>{label}</span><strong>{value}</strong></article>)}</div>
           <div className="report-lower-grid">
-            <section className="surface report-panel"><h3>Solicitações por etapa</h3>
-              {Object.entries(metrics.porStatus || {}).map(([status, count]) => <div className="status-bar-row" key={status}><span>{STATUS_LABELS[status] || status}</span><strong>{count}</strong></div>)}
-              {!Object.keys(metrics.porStatus || {}).length && <p className="muted">Sem dados no período escolhido.</p>}
+            <section className="surface report-panel"><h3>Solicitações por status</h3>
+              {statusEntries.length ? <div className="status-chart" role="img" aria-label="Quantidade de solicitações por status">{statusEntries.map(([status, count]) => (
+                <div className="status-chart-item" key={status} title={`${STATUS_LABELS[status] || status}: ${count}`}>
+                  <strong>{count}</strong>
+                  <div className="status-chart-track"><span style={{ height: `${Math.max(5, (count / maxStatusCount) * 100)}%` }} /></div>
+                  <small>{STATUS_LABELS[status] || status}</small>
+                </div>
+              ))}</div> : <p className="muted">Sem dados no período escolhido.</p>}
             </section>
             <section className="surface report-panel"><h3>Tempo médio de atendimento</h3>
               <div className="duration-stat"><strong>{formatMinutes(metrics.tempoMedioAteProntaParaAnaliseMinutos)}</strong><span>até cadastro completo</span></div>
@@ -749,6 +1061,7 @@ function PublicFormPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [step, setStep] = useState(0);
 
   useEffect(() => {
     if (!token) {
@@ -774,7 +1087,11 @@ function PublicFormPage() {
 
   const fields = form?.campos || [];
   const required = (key) => fields.find((field) => field.chave === key)?.obrigatorio;
+  const fieldLabel = (key, fallback) => fields.find((field) => field.chave === key)?.rotulo || fallback;
   const setValue = (key, value) => setValues((current) => ({ ...current, [key]: value }));
+  const advanceStep = (event) => {
+    if (event.currentTarget.form.reportValidity()) setStep((current) => Math.min(current + 1, 2));
+  };
 
   async function saveData() {
     const selectedVehicle = form?.dados?.veiculos?.find((vehicle) => vehicle.veiculoId.toString() === values.veiculoId);
@@ -842,35 +1159,49 @@ function PublicFormPage() {
           <div className="form-success"><span className="success-check">✓</span><span className="eyebrow">Cadastro enviado</span><h1>Obrigado, recebemos seus dados.</h1><p>A equipe vai analisar as informações e entrar em contato para continuar o atendimento.</p></div>
         ) : form && (
           <>
-            <div className="public-form-title"><span className="eyebrow">Solicitação #{form.solicitacaoId}</span><h1>Complete seu cadastro</h1><p>Olá{form.dados.nomeCompleto ? `, ${form.dados.nomeCompleto}` : ''}! Preencha os dados e envie os documentos para a equipe analisar sua solicitação.</p></div>
+            <div className="public-form-title"><span className="eyebrow">Formulário seguro · Solicitação #{form.solicitacaoId}</span><h1>Vamos atualizar seu cadastro?</h1><p>Olá{form.dados.nomeCompleto ? `, ${form.dados.nomeCompleto}` : ''}! Preencha as informações para a equipe analisar sua solicitação.</p></div>
             {error && <Notice kind="error">{error}</Notice>}
             {notice && <Notice kind="warning">{notice}</Notice>}
+            <div className="form-stepper" aria-label="Etapas do formulário">
+              {['Dados pessoais', 'Veículo', 'Documentos'].map((label, index) => <div className={`form-step ${step === index ? 'current' : step > index ? 'complete' : ''}`} key={label}><span>{step > index ? '✓' : index + 1}</span>{label}</div>)}
+            </div>
             <form className="public-form" onSubmit={submit}>
-              <section className="public-section">
-                <div className="section-title"><span>01</span><div><h2>Seus dados</h2><p>Informações pessoais e do veículo.</p></div></div>
+              {step === 0 && <section className="public-section">
+                <div className="section-title"><span>1</span><div><h2>Dados pessoais</h2><p>Confira seus dados de contato.</p></div></div>
                 <div className="public-field-grid">
-                  {fields.some((field) => field.chave === 'nome') && <label className="field"><span>Nome completo{required('nome') ? ' *' : ''}</span><input required={required('nome')} maxLength="150" value={values.nomeCompleto} onChange={(event) => setValue('nomeCompleto', event.target.value)} /></label>}
-                  {fields.some((field) => field.chave === 'telefone') && <label className="field"><span>Telefone</span><input value={formatPhone(form.dados.telefone)} readOnly /></label>}
-                  {fields.some((field) => field.chave === 'email') && <label className="field"><span>E-mail{required('email') ? ' *' : ''}</span><input type="email" required={required('email')} maxLength="254" value={values.email} onChange={(event) => setValue('email', event.target.value)} /></label>}
-                  {fields.some((field) => field.chave === 'cpf') && <label className="field"><span>CPF{required('cpf') ? ' *' : ''}</span><input required={required('cpf')} maxLength="14" value={values.cpf} onChange={(event) => setValue('cpf', event.target.value)} placeholder="000.000.000-00" /></label>}
-                  {fields.some((field) => field.chave === 'placa') && form.dados.veiculos.length > 0 && <label className="field"><span>Veículo cadastrado</span><select value={values.veiculoId} onChange={(event) => { setValue('veiculoId', event.target.value); setValue('placa', ''); }}><option value="">Cadastrar outro veículo</option>{form.dados.veiculos.map((vehicle) => <option value={vehicle.veiculoId} key={vehicle.veiculoId}>{vehicle.placa} · {vehicle.capacidadeToneladas} t</option>)}</select></label>}
-                  {fields.some((field) => field.chave === 'placa') && !values.veiculoId && <label className="field"><span>Placa{required('placa') ? ' *' : ''}</span><input required={required('placa')} maxLength="8" value={values.placa} onChange={(event) => setValue('placa', event.target.value.toUpperCase())} placeholder="ABC1D23" /></label>}
-                  {fields.some((field) => field.chave === 'capacidade') && !values.veiculoId && <label className="field"><span>Capacidade em toneladas{required('capacidade') ? ' *' : ''}</span><input required={required('capacidade')} type="number" min="0.01" max="200" step="0.01" value={values.capacidadeToneladas} onChange={(event) => setValue('capacidadeToneladas', event.target.value)} /></label>}
+                  {fields.some((field) => field.chave === 'nome') && <label className="field"><span>{fieldLabel('nome', 'Nome completo')}{required('nome') ? ' *' : ''}</span><input required={required('nome')} maxLength="150" value={values.nomeCompleto} onChange={(event) => setValue('nomeCompleto', event.target.value)} /></label>}
+                  {fields.some((field) => field.chave === 'cpf') && <label className="field"><span>{fieldLabel('cpf', 'CPF')}{required('cpf') ? ' *' : ''}</span><input required={required('cpf')} maxLength="14" value={values.cpf} onChange={(event) => setValue('cpf', event.target.value)} placeholder="000.000.000-00" /></label>}
+                  {fields.some((field) => field.chave === 'telefone') && <label className="field"><span>{fieldLabel('telefone', 'Telefone para contato')}</span><input value={formatPhone(form.dados.telefone)} readOnly /></label>}
+                  {fields.some((field) => field.chave === 'email') && <label className="field"><span>{fieldLabel('email', 'E-mail')}{required('email') ? ' *' : ''}</span><input type="email" required={required('email')} maxLength="254" value={values.email} onChange={(event) => setValue('email', event.target.value)} /></label>}
                 </div>
-              </section>
-              <section className="public-section">
-                <div className="section-title"><span>02</span><div><h2>Documentos</h2><p>Envie arquivos PDF, JPG ou PNG de até 10 MB.</p></div></div>
+              </section>}
+              {step === 1 && <section className="public-section">
+                <div className="section-title"><span>2</span><div><h2>Dados do veículo</h2><p>Informe o veículo utilizado na solicitação.</p></div></div>
+                <div className="public-field-grid">
+                  {fields.some((field) => field.chave === 'placa') && form.dados.veiculos.length > 0 && <label className="field"><span>Veículo já cadastrado</span><select value={values.veiculoId} onChange={(event) => { setValue('veiculoId', event.target.value); setValue('placa', ''); }}><option value="">Cadastrar outro veículo</option>{form.dados.veiculos.map((vehicle) => <option value={vehicle.veiculoId} key={vehicle.veiculoId}>{vehicle.placa} · {vehicle.capacidadeToneladas} t</option>)}</select></label>}
+                  {fields.some((field) => field.chave === 'placa') && !values.veiculoId && <label className="field"><span>{fieldLabel('placa', 'Placa do veículo')}{required('placa') ? ' *' : ''}</span><input required={required('placa')} maxLength="8" value={values.placa} onChange={(event) => setValue('placa', event.target.value.toUpperCase())} placeholder="ABC1D23" /></label>}
+                  {fields.some((field) => field.chave === 'capacidade') && !values.veiculoId && <label className="field"><span>{fieldLabel('capacidade', 'Capacidade em toneladas')}{required('capacidade') ? ' *' : ''}</span><input required={required('capacidade')} type="number" min="0.01" max="200" step="0.01" value={values.capacidadeToneladas} onChange={(event) => setValue('capacidadeToneladas', event.target.value)} placeholder="Ex.: 14" /></label>}
+                </div>
+              </section>}
+              {step === 2 && <section className="public-section">
+                <div className="section-title"><span>3</span><div><h2>Documentos</h2><p>Envie os documentos necessários para análise.</p></div></div>
                 <div className="upload-list">
                   {form.documentos.map((doc) => <label className="upload-row" key={doc.chave}>
                     <span className={`upload-state ${doc.estado === 'Validado' ? 'uploaded' : ''}`}>{doc.estado === 'Validado' ? '✓' : '↑'}</span>
-                    <span className="upload-copy"><strong>{doc.rotulo}{doc.obrigatorio && <em>Obrigatório</em>}</strong><small>{doc.nomeOriginal || uploadStatus(doc.estado)}</small></span>
+                    <span className="upload-copy"><strong>{doc.rotulo}{doc.obrigatorio && <em>Obrigatório</em>}</strong><small>{files[doc.chave]?.name || doc.nomeOriginal || uploadStatus(doc.estado)}</small></span>
                     <input type="file" accept=".pdf,image/jpeg,image/png" onChange={(event) => setFiles((current) => ({ ...current, [doc.chave]: event.target.files?.[0] || null }))} />
                     <span className="button subtle small">{files[doc.chave]?.name || 'Escolher arquivo'}</span>
                   </label>)}
-                  {!form.documentos.length && <p className="muted">Não há documentos obrigatórios configurados.</p>}
+                  {!form.documentos.length && <p className="muted">Não há documentos ativos configurados.</p>}
                 </div>
-              </section>
-              <div className="public-submit"><p>Seus dados são usados somente para a análise desta solicitação.</p><button className="button primary" disabled={saving}>{saving ? 'Enviando seus dados…' : 'Salvar e enviar cadastro'} <span>→</span></button></div>
+              </section>}
+              <div className="public-submit">
+                <p>🔒 Seus dados são usados somente para a análise desta solicitação.</p>
+                <div className="form-step-actions">
+                  {step > 0 && <button type="button" className="button subtle" onClick={() => setStep((current) => current - 1)}>← Voltar</button>}
+                  {step < 2 ? <button type="button" className="button primary" onClick={advanceStep}>Continuar →</button> : <button className="button primary" disabled={saving}>{saving ? 'Enviando seus dados…' : 'Enviar cadastro →'}</button>}
+                </div>
+              </div>
             </form>
           </>
         )}

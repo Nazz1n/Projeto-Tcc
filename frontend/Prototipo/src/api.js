@@ -81,10 +81,33 @@ export async function download(path, filename) {
     throw new Error(result?.mensagem || `Falha ao baixar arquivo (${response.status}).`);
   }
 
-  const url = URL.createObjectURL(await response.blob());
+  const downloadName = getDownloadFilename(response.headers.get('content-disposition')) || filename;
+  saveBlob(await response.blob(), downloadName);
+}
+
+function getDownloadFilename(contentDisposition) {
+  if (!contentDisposition) return null;
+
+  const encodedName = contentDisposition.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)?.[1];
+  if (encodedName) {
+    try {
+      return decodeURIComponent(encodedName.trim().replace(/^"|"$/g, ''));
+    } catch {
+      return null;
+    }
+  }
+
+  const plainName = contentDisposition.match(/filename\s*=\s*(?:"([^"]+)"|([^;]+))/i);
+  return (plainName?.[1] || plainName?.[2])?.trim() || null;
+}
+
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
+  document.body.appendChild(link);
   link.click();
-  URL.revokeObjectURL(url);
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
