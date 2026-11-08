@@ -19,6 +19,11 @@ export function saveToken(token) {
 export function clearToken() {
   sessionStorage.removeItem(TOKEN_KEY);
 }
+function handleSessionExpired() {
+  clearToken();
+  sessionStorage.removeItem('fretebot.user');
+  window.location.assign('/login');
+}
 
 export async function api(path, options = {}) {
   const headers = new Headers(options.headers || {});
@@ -40,6 +45,10 @@ export async function api(path, options = {}) {
   } catch {
     throw connectionError(path);
   }
+    if (response.status === 401 && token) {
+    handleSessionExpired();
+    throw new Error('Sua sessão expirou. Entre novamente.');
+  }
 
   if (response.status === 204) return null;
 
@@ -47,6 +56,10 @@ export async function api(path, options = {}) {
   const result = contentType.includes('application/json')
     ? await response.json()
     : await response.text();
+    if (response.status === 401 && token) {
+    handleSessionExpired();
+    throw new Error('Sua sessão expirou. Entre novamente.');
+  }
 
   if (!response.ok) {
     if (response.status === 500 && typeof result === 'string' && !result.trim()) {

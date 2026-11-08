@@ -392,3 +392,5 @@ td strong { color: #263d4b; font-size: 11px; }
   .form-stepper { gap: 4px; }
   .form-step { flex: 1; justify-content: center; gap: 4px; padding: 0 5px; font-size: 8px; }
 }
+.association-row { display: flex; gap: 12px; align-items: flex-end; margin: 16px 0; }
+.association-row .field { flex: 1; }
