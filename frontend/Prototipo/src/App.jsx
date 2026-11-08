@@ -362,12 +362,24 @@ function StartAtendimentoModal({ onClose, onStarted }) {
     }
   }
 
-  async function copyLink() {
+  async function copyLink(event) {
+    const input = event.currentTarget.parentElement.querySelector('input');
     try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API indisponível.');
       await navigator.clipboard.writeText(result.link.urlAcesso);
       setCopied(true);
+      setError('');
     } catch {
-      setError('Não foi possível copiar o link. Selecione e copie o endereço manualmente.');
+      input.focus();
+      input.select();
+      input.setSelectionRange(0, input.value.length);
+      if (document.execCommand('copy')) {
+        setCopied(true);
+        setError('');
+      } else {
+        setCopied(false);
+        setError('O endereço está selecionado. Use a opção Copiar do seu aparelho.');
+      }
     }
   }
 
@@ -383,6 +395,7 @@ function StartAtendimentoModal({ onClose, onStarted }) {
       ) : (
         <div className="stack-form">
           <Notice kind="success">Solicitação {result.solicitacaoCriada ? 'criada' : 'reutilizada'} com sucesso para {result.nomeMotorista || phone}.</Notice>
+          {error && <Notice kind="info">{error}</Notice>}
           <label className="field"><span>Link único do formulário</span><div className="copy-field"><input readOnly value={result.link.urlAcesso} /><button type="button" className="button subtle small" onClick={copyLink}>{copied ? 'Copiado' : 'Copiar'}</button></div></label>
           <p className="muted small-text">{result.link.mensagemSugerida}</p>
           <div className="modal-actions">
@@ -482,6 +495,11 @@ function RequestDetails({ id, currentUserId, onClose, onUpdated }) {
 
   const assignedAttendant = attendants.find((attendant) => attendant.atendenteId === detail?.atendenteId);
   const availableLoads = loads.filter((load) => load.status === 'Disponivel' || load.cargaId === detail?.cargaId);
+  const pendingRequiredDocuments = detail?.documentos?.filter(
+    (doc) => doc.obrigatorio && doc.situacao !== 'Validado',
+  ) || [];
+  const pendingRequiredFields = detail?.camposPendentes || [];
+  const cannotHire = pendingRequiredFields.length > 0 || pendingRequiredDocuments.length > 0;
 
   return (
     <Modal title="Detalhes da solicitação" onClose={onClose} wide>
@@ -522,11 +540,14 @@ function RequestDetails({ id, currentUserId, onClose, onUpdated }) {
               </div>
             ))}
           </section>
+          {detail.status === 'EmAnalise' && cannotHire && <Notice kind="warning">
+            Para contratar, preencha os campos obrigatórios e valide todos os documentos obrigatórios.
+          </Notice>}
           <div className="modal-actions spread">
             <span className="muted small-text">Aberta em {formatDate(detail.dataCriacao)}</span>
             <div className="button-row">
               {currentUserId && detail.atendenteId !== currentUserId && <button className="button subtle" disabled={busy} onClick={assumeAttendance}>{busy ? 'Atribuindo…' : 'Assumir atendimento'}</button>}
-              {STATUS_OPTIONS.filter(([value]) => value !== detail.status).map(([value, label]) => <button key={value} className={`button ${value === 'Encerrado' ? 'subtle' : 'primary'}`} disabled={busy} onClick={() => changeStatus(value)}>{busy ? 'Salvando…' : label}</button>)}
+              {STATUS_OPTIONS.filter(([value]) => value !== detail.status).map(([value, label]) => <button key={value} className={`button ${value === 'Encerrado' ? 'subtle' : 'primary'}`} disabled={busy || (value === 'Contratado' && cannotHire)} onClick={() => changeStatus(value)}>{busy ? 'Salvando…' : label}</button>)}
             </div>
           </div>
         </>

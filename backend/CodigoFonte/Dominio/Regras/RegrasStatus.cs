@@ -1,3 +1,4 @@
+using System.Linq;
 using Captacao.Domain.Constantes;
 
 namespace Captacao.Domain.Regras;
@@ -11,6 +12,31 @@ namespace Captacao.Domain.Regras;
 //   -> Encerrado (de qualquer estado aberto).
 public static class RegrasStatus
 {
+    public static bool ContratacaoPermitida(
+        AvaliacaoSolicitacao avaliacao,
+        out string? motivo)
+    {
+        if (!avaliacao.CamposObrigatoriosPreenchidos)
+        {
+            motivo = $"Preencha os campos obrigatórios antes de contratar: {string.Join(", ", avaliacao.CamposPendentes)}.";
+            return false;
+        }
+
+        var documentosPendentes = avaliacao.Documentos
+            .Where(d => d.Obrigatorio && d.Estado != EstadoDocumento.Validado)
+            .Select(d => d.Rotulo)
+            .ToList();
+
+        if (documentosPendentes.Count > 0)
+        {
+            motivo = $"Valide todos os documentos obrigatórios antes de contratar: {string.Join(", ", documentosPendentes)}.";
+            return false;
+        }
+
+        motivo = null;
+        return true;
+    }
+
     public static string StatusAposEnvio(AvaliacaoSolicitacao a) =>
         a.PossuiDocumentoObrigatorioAusente || a.PossuiDocumentoObrigatorioReprovado
             ? StatusSolicitacao.ComPendencias

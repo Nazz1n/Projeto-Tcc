@@ -262,6 +262,15 @@ public class SolicitacaoService
         if (!RegrasStatus.TransicaoManualPermitida(solicitacao.Status, novoStatus, out var motivo))
             throw new ArgumentException(motivo ?? "Transição de status não permitida.");
 
+        if (novoStatus == StatusSolicitacao.Contratado &&
+            !RegrasStatus.ContratacaoPermitida(
+                await _regras.AvaliarAsync(solicitacao),
+                out var motivoContratacao))
+        {
+            throw new ArgumentException(
+                motivoContratacao ?? "Não é possível contratar enquanto houver pendências.");
+        }
+
         var anterior = solicitacao.Status;
 
         _regras.AplicarStatus(solicitacao, novoStatus, atendenteId);

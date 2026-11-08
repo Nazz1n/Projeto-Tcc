@@ -105,6 +105,7 @@ flowchart LR
 - **Automáticos:** Novo contato, Aguardando preenchimento, Com pendências e Pronto para análise. A API define conforme o formulário e os documentos.
 - **Manuais:** Em análise, Contratado e Encerrado, definidos pela equipe.
 - **Em análise** só vem de *Com pendências* ou *Pronto para análise*. **Contratado** só vem de *Em análise*. **Encerrado** vale para qualquer solicitação não finalizada.
+- Para marcar uma solicitação como **Contratado**, todos os campos obrigatórios precisam estar preenchidos e todos os documentos obrigatórios validados. Documentos opcionais não bloqueiam a contratação.
 
 ### Prioridade
 

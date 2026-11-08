@@ -218,6 +218,102 @@ public class AvaliadorSolicitacaoTests
 
 public class RegrasStatusTests
 {
+    [Fact]
+    public void ContratacaoPermitida_BloqueiaDocumentoObrigatorioAguardandoValidacao()
+    {
+        var avaliacao = new AvaliacaoSolicitacao
+        {
+            Documentos = new[]
+            {
+                new AvaliacaoDocumento
+                {
+                    Chave = CatalogoFormulario.Cnh,
+                    Rotulo = "CNH",
+                    Obrigatorio = true,
+                    Estado = EstadoDocumento.AguardandoValidacao
+                }
+            }
+        };
+
+        Assert.False(RegrasStatus.ContratacaoPermitida(avaliacao, out var motivo));
+        Assert.Contains("CNH", motivo);
+    }
+
+    [Fact]
+    public void ContratacaoPermitida_BloqueiaDocumentoObrigatorioReprovado()
+    {
+        var avaliacao = new AvaliacaoSolicitacao
+        {
+            Documentos = new[]
+            {
+                new AvaliacaoDocumento
+                {
+                    Chave = CatalogoFormulario.Cnh,
+                    Rotulo = "CNH",
+                    Obrigatorio = true,
+                    Estado = EstadoDocumento.Reprovado
+                }
+            }
+        };
+
+        Assert.False(RegrasStatus.ContratacaoPermitida(avaliacao, out var motivo));
+        Assert.Contains("CNH", motivo);
+    }
+
+    [Fact]
+    public void ContratacaoPermitida_BloqueiaCamposObrigatoriosPendentes()
+    {
+        var avaliacao = new AvaliacaoSolicitacao
+        {
+            CamposPendentes = new[] { CatalogoFormulario.Cpf }
+        };
+
+        Assert.False(RegrasStatus.ContratacaoPermitida(avaliacao, out var motivo));
+        Assert.Contains(CatalogoFormulario.Cpf, motivo);
+    }
+
+    [Fact]
+    public void ContratacaoPermitida_IgnoraDocumentoOpcionalPendente()
+    {
+        var avaliacao = new AvaliacaoSolicitacao
+        {
+            Documentos = new[]
+            {
+                new AvaliacaoDocumento
+                {
+                    Chave = "documento_adicional",
+                    Rotulo = "Documento adicional",
+                    Obrigatorio = false,
+                    Estado = EstadoDocumento.AguardandoValidacao
+                }
+            }
+        };
+
+        Assert.True(RegrasStatus.ContratacaoPermitida(avaliacao, out var motivo));
+        Assert.Null(motivo);
+    }
+
+    [Fact]
+    public void ContratacaoPermitida_AceitaCamposEDocumentosObrigatoriosValidos()
+    {
+        var avaliacao = new AvaliacaoSolicitacao
+        {
+            Documentos = new[]
+            {
+                new AvaliacaoDocumento
+                {
+                    Chave = CatalogoFormulario.Cnh,
+                    Rotulo = "CNH",
+                    Obrigatorio = true,
+                    Estado = EstadoDocumento.Validado
+                }
+            }
+        };
+
+        Assert.True(RegrasStatus.ContratacaoPermitida(avaliacao, out var motivo));
+        Assert.Null(motivo);
+    }
+
     [Theory]
     [InlineData(StatusSolicitacao.ComPendencias, StatusSolicitacao.EmAnalise, true)]
     [InlineData(StatusSolicitacao.ProntoParaAnalise, StatusSolicitacao.EmAnalise, true)]
