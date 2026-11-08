@@ -19,6 +19,12 @@ const STATUS_OPTIONS = [
   ['Contratado', 'Contratado'],
   ['Encerrado', 'Encerrado'],
 ];
+function allowedStatusOptions(status) {
+  if (['Contratado', 'Encerrado'].includes(status)) return [];
+  if (status === 'EmAnalise') return STATUS_OPTIONS.filter(([v]) => v !== 'EmAnalise' && v !== undefined);
+  if (['ComPendencias', 'ProntoParaAnalise'].includes(status)) return STATUS_OPTIONS.filter(([v]) => v === 'EmAnalise' || v === 'Encerrado');
+  return STATUS_OPTIONS.filter(([v]) => v === 'Encerrado');
+}
 
 function readUser() {
   try {
@@ -657,7 +663,10 @@ function CreateDriverModal({ onClose, onCreated }) {
     setBusy(true);
     setError('');
     try {
-      await api('/Motoristas', { method: 'POST', body: JSON.stringify(form) });
+      await api('/Motoristas', {
+  method: 'POST',
+  body: JSON.stringify({ ...form, email: form.email || null, rntrc: form.rntrc || null }),
+});
       onCreated();
     } catch (requestError) {
       setError(requestError.message);
@@ -1115,9 +1124,9 @@ function PublicFormPage() {
   async function sendDocument(doc) {
     const file = files[doc.chave];
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
-      setError(`O arquivo ${file.name} excede o limite de 10 MB.`);
-      return;
+        if (file.size > 10 * 1024 * 1024) {
+      throw new Error(`O arquivo ${file.name} excede o limite de 10 MB.`);
+    
     }
     const body = new FormData();
     body.append('Tipo', doc.chave);
