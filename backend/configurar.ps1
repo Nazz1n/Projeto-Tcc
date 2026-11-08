@@ -24,9 +24,14 @@ $bytes = New-Object byte[] 32
 [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
 $chave = [Convert]::ToBase64String($bytes)
 
+$bytesCpf = New-Object byte[] 32
+[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytesCpf)
+$chaveCpf = [Convert]::ToBase64String($bytesCpf)
+
 $json = Get-Content $modelo -Raw -Encoding UTF8
 $json = $json.Replace('TROQUE-PELA-SENHA-DO-MYSQL', $senhaBanco.Replace('\','\\').Replace('"','\"'))
-$json = $json.Replace('TROQUE-POR-CHAVE-BASE64-DE-32-BYTES', $chave)
+$json = $json.Replace('"Key": "TROQUE-POR-CHAVE-BASE64-DE-32-BYTES"', '"Key": "' + $chave + '"')
+$json = $json.Replace('"ChaveHashCpf": "TROQUE-POR-CHAVE-BASE64-DE-32-BYTES"', '"ChaveHashCpf": "' + $chaveCpf + '"')
 $json = $json.Replace('"Administrador",', '"' + $nomeAdmin.Replace('"','\"') + '",')
 $json = $json.Replace('admin@exemplo.com', $emailAdmin)
 $json = $json.Replace('TROQUE-POR-UMA-SENHA-LONGA', $senhaAdmin.Replace('\','\\').Replace('"','\"'))

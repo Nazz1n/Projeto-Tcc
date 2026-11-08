@@ -16,6 +16,7 @@ import json, os, base64
 c = json.load(open('appsettings.Development.example.json', encoding='utf-8'))
 c['ConnectionStrings']['DefaultConnection'] = c['ConnectionStrings']['DefaultConnection'].replace('TROQUE-PELA-SENHA-DO-MYSQL', os.environ['SENHA_BANCO'])
 c['Jwt']['Key'] = base64.b64encode(os.urandom(32)).decode()
+c['Seguranca']['ChaveHashCpf'] = base64.b64encode(os.urandom(32)).decode()
 c['Administrador'] = {'Nome': os.environ['NOME_ADMIN'], 'Email': os.environ['EMAIL_ADMIN'], 'Senha': os.environ['SENHA_ADMIN']}
 json.dump(c, open('appsettings.Development.json', 'w', encoding='utf-8'), indent=2, ensure_ascii=False)
 PY

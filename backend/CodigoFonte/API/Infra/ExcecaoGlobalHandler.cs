@@ -33,8 +33,8 @@ public class ExcecaoGlobalHandler : IExceptionHandler
 
         // Caso 1: violação de índice único.
         // Acontece quando duas requisições simultâneas passam pela checagem
-        // "já existe?" e tentam inserir o mesmo telefone, placa, CPF,
-
+        // "já existe?" e tentam inserir o mesmo telefone, placa, CPF
+        // ou hash de token. O índice único do banco
         // barra a segunda, e aqui ela vira 409 em vez de 500.
         if (exception is DbUpdateException && EhViolacaoDeUnicidade(exception))
         {
