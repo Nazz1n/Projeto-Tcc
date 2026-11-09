@@ -262,9 +262,32 @@ public class SolicitacaoService
         if (!RegrasStatus.TransicaoManualPermitida(solicitacao.Status, novoStatus, out var motivo))
             throw new ArgumentException(motivo ?? "Transição de status não permitida.");
 
+        if (novoStatus == StatusSolicitacao.Contratado &&
+            !RegrasStatus.ContratacaoPermitida(
+                await _regras.AvaliarAsync(solicitacao),
+                out var motivoContratacao))
+        {
+            throw new ArgumentException(
+                motivoContratacao ?? "Não é possível contratar enquanto houver pendências.");
+        }
+
+        if (novoStatus == StatusSolicitacao.Contratado &&
+            solicitacao.Carga != null &&
+            solicitacao.Carga.Status != StatusCarga.Disponivel)
+        {
+            throw new ArgumentException("A carga vinculada não está mais disponível.");
+        }
+
+        await using var transaction = await _context.Database.BeginTransactionAsync();
         var anterior = solicitacao.Status;
+        var cargaContratada = novoStatus == StatusSolicitacao.Contratado
+            ? solicitacao.Carga
+            : null;
 
         _regras.AplicarStatus(solicitacao, novoStatus, atendenteId);
+
+        if (cargaContratada != null)
+            cargaContratada.Status = StatusCarga.Contratada;
 
         // Quem assume a solicitação passa a ser o responsável.
         if (novoStatus == StatusSolicitacao.EmAnalise)
@@ -279,6 +302,15 @@ public class SolicitacaoService
             $"Status anterior: {anterior}. Novo status: {novoStatus}.",
             atendenteId);
 
+        if (cargaContratada != null)
+        {
+            await _auditoriaService.RegistrarAsync(
+                "Carga contratada pela solicitação",
+                $"Carga {cargaContratada.CargaId} ({cargaContratada.Origem} → {cargaContratada.Destino}) marcada como contratada pela solicitação {solicitacao.SolicitacaoId}.",
+                atendenteId);
+        }
+
+        await transaction.CommitAsync();
         await _regras.NotificarAsync(solicitacao, statusMudou: true);
 
         return (await BuscarPorIdAsync(solicitacaoId))!;

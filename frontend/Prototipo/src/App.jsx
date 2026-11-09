@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { HubConnectionBuilder } from '@microsoft/signalr';
 import { api, clearToken, download, getToken, saveToken } from './api';
+import cccLogo from './assets/ccc-logo.png';
 
 const STATUS_LABELS = {
   NovoContato: 'Novo contato',
@@ -34,9 +35,38 @@ function readUser() {
   }
 }
 
+function readSavedTheme() {
+  try {
+    return localStorage.getItem('fretebot.theme') === 'dark';
+  } catch {
+    return false;
+  }
+}
+
+function readHiddenKanbanCards(storageKey) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    return new Set(Array.isArray(stored) ? stored.filter(Number.isInteger) : []);
+  } catch {
+    return new Set();
+  }
+}
+
 function App() {
   const [token, setToken] = useState(getToken());
   const [user, setUser] = useState(readUser);
+  const [darkMode, setDarkMode] = useState(readSavedTheme);
+
+  useEffect(() => {
+    const theme = darkMode ? 'dark' : 'light';
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    try {
+      localStorage.setItem('fretebot.theme', theme);
+    } catch {
+      // The selected theme still applies for this session if storage is unavailable.
+    }
+  }, [darkMode]);
 
   const signIn = (result) => {
     saveToken(result.token);
@@ -59,7 +89,7 @@ function App() {
       <Route path="/acesso/:token" element={<PublicFormPage />} />
       <Route path="/form" element={<PublicFormPage />} />
       <Route path="/form/:token" element={<PublicFormPage />} />
-      <Route path="/admin/*" element={token ? <AdminApp user={user} onSignOut={signOut} /> : <Navigate to="/login" replace />} />
+      <Route path="/admin/*" element={token ? <AdminApp user={user} darkMode={darkMode} onToggleDarkMode={() => setDarkMode((value) => !value)} onSignOut={signOut} /> : <Navigate to="/login" replace />} />
       <Route path="/" element={<Navigate to={token ? '/admin' : '/login'} replace />} />
       <Route path="*" element={<Navigate to={token ? '/admin' : '/login'} replace />} />
     </Routes>
@@ -94,11 +124,26 @@ function LoginPage({ onLogin }) {
   return (
     <main className="login-page">
       <section className="login-brand">
-        <div className="brand-lockup"><span className="brand-mark">F</span><span>Fretebot</span></div>
+        <div className="brand-lockup"><img className="brand-logo" src={cccLogo} alt="CCC — Central de Cargas e Contratação" /></div>
         <div>
-          <span className="eyebrow">Plataforma de captação</span>
+          <span className="eyebrow">Central de Carga e Contratação</span>
           <h1>Do primeiro contato à contratação, em um só lugar.</h1>
           <p>Organize motoristas, acompanhe cadastros e conecte sua equipe à operação de fretes.</p>
+        </div>
+        <div className="login-animation" aria-hidden="true">
+          <span className="pixel-crate crate-one" />
+          <span className="pixel-crate crate-two" />
+          <span className="pixel-crate crate-three" />
+          <div className="pixel-truck">
+            <span className="truck-smoke smoke-one" />
+            <span className="truck-smoke smoke-two" />
+            <span className="truck-smoke smoke-three" />
+            <span className="truck-cargo" />
+            <span className="truck-cabin"><span /></span>
+            <span className="truck-wheel wheel-one" />
+            <span className="truck-wheel wheel-two" />
+          </div>
+          <span className="truck-road" />
         </div>
         <div className="login-footnote"><span className="online-dot" /> Painel de gestão de fretes</div>
       </section>
@@ -126,9 +171,21 @@ function LoginPage({ onLogin }) {
   );
 }
 
-function AdminApp({ user, onSignOut }) {
+function AdminApp({ user, darkMode, onToggleDarkMode, onSignOut }) {
   const location = useLocation();
   const isAdmin = (user?.perfil || '').toLowerCase().includes('admin');
+  const profileKey = `fretebot.profilePhoto.${(user?.email || user?.nome || 'local').toLowerCase()}`;
+  const [profilePhoto, setProfilePhoto] = useState(() => {
+    try {
+      return localStorage.getItem(profileKey) || '';
+    } catch {
+      return '';
+    }
+  });
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [profileError, setProfileError] = useState('');
+  const profileMenuRef = useRef(null);
+  const photoInputRef = useRef(null);
   const title = useMemo(() => {
     if (location.pathname.startsWith('/admin/motoristas')) return 'Motoristas';
     if (location.pathname.startsWith('/admin/cargas')) return 'Cargas';
@@ -138,10 +195,68 @@ function AdminApp({ user, onSignOut }) {
     return 'Central de atendimento';
   }, [location.pathname]);
 
+  useEffect(() => {
+    if (!profileMenuOpen) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (!profileMenuRef.current?.contains(event.target)) setProfileMenuOpen(false);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setProfileMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [profileMenuOpen]);
+
+  function saveProfilePhoto(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setProfileError('Escolha uma imagem JPG, PNG ou WEBP.');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setProfileError('A foto deve ter no máximo 2 MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        setProfileError('Não foi possível carregar esta imagem.');
+        return;
+      }
+      try {
+        localStorage.setItem(profileKey, reader.result);
+        setProfilePhoto(reader.result);
+        setProfileError('');
+        setProfileMenuOpen(false);
+      } catch {
+        setProfileError('Não foi possível salvar a foto neste navegador.');
+      }
+    };
+    reader.onerror = () => setProfileError('Não foi possível carregar esta imagem.');
+    reader.readAsDataURL(file);
+  }
+
+  function removeProfilePhoto() {
+    try {
+      localStorage.removeItem(profileKey);
+      setProfilePhoto('');
+      setProfileError('');
+    } catch {
+      setProfileError('Não foi possível remover a foto neste navegador.');
+    }
+  }
+
   return (
     <div className="admin-shell">
       <aside className="sidebar">
-        <Link className="brand-lockup sidebar-brand" to="/admin"><span className="brand-mark">F</span><span>Fretebot</span></Link>
+        <Link className="brand-lockup sidebar-brand" to="/admin"><img className="brand-logo" src={cccLogo} alt="CCC — Central de Cargas e Contratação" /></Link>
         <div className="sidebar-caption">OPERAÇÃO</div>
         <nav className="side-nav">
           <NavLink to="/admin" exact icon="◫">Central de atendimento</NavLink>
@@ -156,7 +271,7 @@ function AdminApp({ user, onSignOut }) {
         </nav>
         <div className="sidebar-bottom">
           <div className="sidebar-user">
-            <span className="avatar">{initials(user?.nome)}</span>
+          <UserAvatar name={user?.nome} photo={profilePhoto} className="avatar" />
             <span className="user-meta"><strong>{user?.nome || 'Atendente'}</strong><small>{user?.perfil || 'Equipe'}</small></span>
           </div>
           <button className="signout-button" onClick={onSignOut} title="Sair" aria-label="Sair">↪</button>
@@ -164,17 +279,48 @@ function AdminApp({ user, onSignOut }) {
       </aside>
       <div className="workspace">
         <header className="topbar">
-          <div><div className="breadcrumb">Fretebot <span>/</span> {title}</div><h1>{title}</h1></div>
+          <div><div className="breadcrumb">CCC <span>/</span> {title}</div><h1>{title}</h1></div>
           <div className="topbar-right">
             <span className="connection-status"><i /> Sessão ativa</span>
-            <span className="avatar top-avatar" title={user?.nome}>{initials(user?.nome)}</span>
+            <div className="profile-menu-anchor" ref={profileMenuRef}>
+              <button
+                type="button"
+                className="profile-trigger"
+                title="Opções do perfil"
+                aria-label="Abrir opções do perfil"
+                aria-haspopup="menu"
+                aria-expanded={profileMenuOpen}
+                onClick={() => { setProfileMenuOpen((open) => !open); setProfileError(''); }}
+              >
+                <UserAvatar name={user?.nome} photo={profilePhoto} className="avatar top-avatar" />
+              </button>
+              {profileMenuOpen && <div className="profile-menu" role="menu" aria-label="Opções do perfil">
+                <button className="profile-menu-item" type="button" role="menuitem" onClick={() => photoInputRef.current?.click()}>
+                  <span className="profile-menu-icon" aria-hidden="true">▧</span>
+                  <span>Definir foto de perfil</span>
+                </button>
+                {profilePhoto && <button className="profile-menu-item" type="button" role="menuitem" onClick={removeProfilePhoto}>
+                  <span className="profile-menu-icon" aria-hidden="true">×</span>
+                  <span>Remover foto</span>
+                </button>}
+                <div className="profile-menu-divider" />
+                <label className="profile-menu-item profile-theme-item" role="menuitem">
+                  <span className="profile-menu-icon" aria-hidden="true">{darkMode ? '☾' : '☼'}</span>
+                  <span>Modo noturno</span>
+                  <input type="checkbox" role="switch" aria-label="Modo noturno" checked={darkMode} onChange={onToggleDarkMode} />
+                </label>
+                {profileError && <p className="profile-menu-error" role="alert">{profileError}</p>}
+                <p className="profile-menu-hint">Foto salva somente neste navegador · JPG, PNG ou WEBP até 2 MB</p>
+              </div>}
+              <input ref={photoInputRef} className="profile-photo-input" type="file" accept="image/jpeg,image/png,image/webp" onChange={saveProfilePhoto} />
+            </div>
           </div>
         </header>
         <main className="page-content">
           <Routes>
             <Route index element={<CentralPage user={user} />} />
             <Route path="motoristas" element={<MotoristasPage />} />
-            <Route path="cargas" element={<CargasPage isAdmin={isAdmin} />} />
+            <Route path="cargas" element={<CargasPage isAdmin={isAdmin} user={user} />} />
             {isAdmin && <Route path="relatorios" element={<ReportsPage />} />}
             {isAdmin && <Route path="formulario" element={<FormularioConfigPage />} />}
             {isAdmin && <Route path="equipe" element={<EquipePage />} />}
@@ -183,6 +329,14 @@ function AdminApp({ user, onSignOut }) {
         </main>
       </div>
     </div>
+  );
+}
+
+function UserAvatar({ name, photo, className }) {
+  return (
+    <span className={`${className}${photo ? ' has-photo' : ''}`}>
+      {photo ? <img src={photo} alt="" /> : initials(name)}
+    </span>
   );
 }
 
@@ -196,6 +350,12 @@ function CentralPage({ user }) {
   const [columns, setColumns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [cleanupError, setCleanupError] = useState('');
+  const [cleanupNotice, setCleanupNotice] = useState('');
+  const [cleaningStatus, setCleaningStatus] = useState('');
+  const [contractCelebration, setContractCelebration] = useState(null);
+  const cleanupStorageKey = `ccc.kanban.hidden.${(user?.email || user?.nome || 'local').toLowerCase()}`;
+  const [hiddenCardIds, setHiddenCardIds] = useState(() => readHiddenKanbanCards(cleanupStorageKey));
   const [showNew, setShowNew] = useState(false);
   const [selected, setSelected] = useState(null);
   const [refresh, setRefresh] = useState(0);
@@ -262,6 +422,12 @@ function CentralPage({ user }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!contractCelebration) return undefined;
+    const timeout = window.setTimeout(() => setContractCelebration(null), 6500);
+    return () => window.clearTimeout(timeout);
+  }, [contractCelebration]);
+
   const requests = columns.flatMap((column) => column.solicitacoes || []);
   const totals = requests.length;
   const openCount = columns
@@ -274,9 +440,47 @@ function CentralPage({ user }) {
     .filter((column) => !statusFilter || column.status === statusFilter)
     .map((column) => ({
       ...column,
-      solicitacoes: (column.solicitacoes || []).filter((item) => !priorityFilter || item.prioridade === priorityFilter),
+      solicitacoes: (column.solicitacoes || [])
+        .filter((item) => !hiddenCardIds.has(item.solicitacaoId))
+        .filter((item) => !priorityFilter || item.prioridade === priorityFilter),
     }));
   const refreshBoard = () => setRefresh((value) => value + 1);
+
+  function clearColumn(status, label) {
+    const column = columns.find((item) => item.status === status);
+    const cardsToClear = (column?.solicitacoes || []).filter((item) => !hiddenCardIds.has(item.solicitacaoId));
+    const cardCount = cardsToClear.length;
+    if (!cardCount || cleaningStatus) return;
+
+    const confirmed = window.confirm(
+      `Ocultar ${cardCount} atendimento(s) ${label.toLowerCase()} deste kanban neste navegador? Os registros continuarão salvos no sistema e nos relatórios.`
+    );
+    if (!confirmed) return;
+
+    const nextHiddenIds = new Set(hiddenCardIds);
+    cardsToClear.forEach((item) => nextHiddenIds.add(item.solicitacaoId));
+    let preferenceSaved = true;
+    try {
+      localStorage.setItem(cleanupStorageKey, JSON.stringify([...nextHiddenIds]));
+    } catch {
+      preferenceSaved = false;
+    }
+
+    setCleanupError('');
+    setCleanupNotice('');
+    setCleaningStatus(status);
+    const animationDelay = Math.min(cardCount - 1, 8) * 45 + 520;
+    window.setTimeout(() => {
+      setHiddenCardIds(nextHiddenIds);
+      setCleaningStatus('');
+      setCleanupNotice(cardCount === 1
+        ? `Card da coluna ${label} removido do kanban neste navegador. O atendimento continua salvo no sistema.`
+        : `${cardCount} cards da coluna ${label} removidos do kanban neste navegador. Os atendimentos continuam salvos no sistema.`);
+      if (!preferenceSaved) {
+        setCleanupError('Não foi possível salvar a limpeza neste navegador; os cards poderão voltar ao recarregar a página.');
+      }
+    }, animationDelay);
+  }
 
   return (
     <>
@@ -295,6 +499,12 @@ function CentralPage({ user }) {
         <span className="refresh-stamp">{realtimeState === 'connected' ? 'Atualizações em tempo real ativas' : 'Atualizações automáticas indisponíveis'}</span>
         <button className="button subtle small" onClick={refreshBoard} disabled={loading}>↻ Atualizar</button>
       </div>
+      {cleanupNotice && <div className="cleanup-toast" role="status" aria-live="polite">
+        <span className="cleanup-toast-icon" aria-hidden="true">✓</span>
+        <span>{cleanupNotice}</span>
+        <button type="button" aria-label="Fechar aviso" onClick={() => setCleanupNotice('')}>×</button>
+      </div>}
+      {cleanupError && <Notice kind="error">{cleanupError}</Notice>}
       <div className="board-filters">
         <label className="field compact-field"><span>Filtrar por status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="">Todos os status</option>{columns.map((column) => <option value={column.status} key={column.status}>{column.rotulo}</option>)}</select></label>
         <label className="field compact-field"><span>Filtrar por prioridade</span><select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}><option value="">Todas</option><option>Alta</option><option>Media</option><option>Baixa</option></select></label>
@@ -305,14 +515,29 @@ function CentralPage({ user }) {
       {loading ? <Loading label="Carregando solicitações…" /> : (
         <div className="kanban-board">
           {visibleColumns.map((column, index) => (
-            <section className={`kanban-column ${STATUS_COLORS[index % STATUS_COLORS.length]}`} key={column.status}>
+            <section className={`kanban-column ${STATUS_COLORS[index % STATUS_COLORS.length]}${cleaningStatus === column.status ? ' clearing' : ''}`} key={column.status}>
               <header className="column-heading">
                 <span className="column-indicator" />
                 <h3>{column.rotulo || STATUS_LABELS[column.status] || column.status}</h3>
                 <span className="count-badge">{column.solicitacoes?.length || 0}</span>
+                {['Contratado', 'Encerrado'].includes(column.status) && <button
+                  type="button"
+                  className="button danger small clear-column-button"
+                  disabled={!column.solicitacoes?.length || column.solicitacoes.every((item) => hiddenCardIds.has(item.solicitacaoId)) || Boolean(cleaningStatus)}
+                  onClick={() => clearColumn(column.status, column.rotulo || STATUS_LABELS[column.status])}
+                >
+                  Limpar
+                </button>}
               </header>
               <div className="column-cards">
-                {column.solicitacoes?.map((item) => <RequestCard key={item.solicitacaoId} item={item} status={column.status} onClick={() => setSelected(item)} />)}
+                {column.solicitacoes?.map((item, cardIndex) => <RequestCard
+                  key={item.solicitacaoId}
+                  item={item}
+                  status={column.status}
+                  className={cleaningStatus === column.status ? 'clear-exit' : ''}
+                  style={{ '--archive-index': Math.min(cardIndex, 8) }}
+                  onClick={() => setSelected(item)}
+                />)}
                 {!column.solicitacoes?.length && <div className="empty-column">Nenhuma solicitação nesta etapa</div>}
               </div>
             </section>
@@ -321,14 +546,28 @@ function CentralPage({ user }) {
         </div>
       )}
       {showNew && <StartAtendimentoModal onClose={() => setShowNew(false)} onStarted={() => { setShowNew(false); refreshBoard(); }} />}
-      {selected && <RequestDetails id={selected.solicitacaoId} currentUserId={user?.atendenteId} onClose={() => { setSelected(null); refreshBoard(); }} onUpdated={() => { setSelected(null); refreshBoard(); }} />}
+      {selected && <RequestDetails
+        id={selected.solicitacaoId}
+        currentUserId={user?.atendenteId}
+        onClose={() => { setSelected(null); refreshBoard(); }}
+        onUpdated={() => { setSelected(null); refreshBoard(); }}
+        onContracted={(request) => {
+          setSelected(null);
+          setContractCelebration(request);
+          refreshBoard();
+        }}
+      />}
+      {contractCelebration && <ContractCelebration
+        request={contractCelebration}
+        onClose={() => setContractCelebration(null)}
+      />}
     </>
   );
 }
 
-function RequestCard({ item, status, onClick }) {
+function RequestCard({ item, status, onClick, className = '', style }) {
   return (
-    <button className="request-card" onClick={onClick}>
+    <button className={`request-card ${className}`} style={style} onClick={onClick}>
       <div className="request-card-top"><span className="request-number">#{item.solicitacaoId}</span><span className={`priority ${priorityClass(item.prioridade)}`}>{item.prioridade || 'Sem prioridade'}</span><span className="request-date">{formatDate(item.dataCriacao)}</span></div>
       <strong className="request-name">{item.nomeMotorista || 'Motorista sem nome'}</strong>
       <span className="request-phone">{formatPhone(item.telefone)}</span>
@@ -362,12 +601,24 @@ function StartAtendimentoModal({ onClose, onStarted }) {
     }
   }
 
-  async function copyLink() {
+  async function copyLink(event) {
+    const input = event.currentTarget.parentElement.querySelector('input');
     try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API indisponível.');
       await navigator.clipboard.writeText(result.link.urlAcesso);
       setCopied(true);
+      setError('');
     } catch {
-      setError('Não foi possível copiar o link. Selecione e copie o endereço manualmente.');
+      input.focus();
+      input.select();
+      input.setSelectionRange(0, input.value.length);
+      if (document.execCommand('copy')) {
+        setCopied(true);
+        setError('');
+      } else {
+        setCopied(false);
+        setError('O endereço está selecionado. Use a opção Copiar do seu aparelho.');
+      }
     }
   }
 
@@ -383,6 +634,7 @@ function StartAtendimentoModal({ onClose, onStarted }) {
       ) : (
         <div className="stack-form">
           <Notice kind="success">Solicitação {result.solicitacaoCriada ? 'criada' : 'reutilizada'} com sucesso para {result.nomeMotorista || phone}.</Notice>
+          {error && <Notice kind="info">{error}</Notice>}
           <label className="field"><span>Link único do formulário</span><div className="copy-field"><input readOnly value={result.link.urlAcesso} /><button type="button" className="button subtle small" onClick={copyLink}>{copied ? 'Copiado' : 'Copiar'}</button></div></label>
           <p className="muted small-text">{result.link.mensagemSugerida}</p>
           <div className="modal-actions">
@@ -395,7 +647,36 @@ function StartAtendimentoModal({ onClose, onStarted }) {
   );
 }
 
-function RequestDetails({ id, currentUserId, onClose, onUpdated }) {
+function ContractCelebration({ request, onClose }) {
+  const hasLoad = request.cargaId != null;
+  return (
+    <aside className="contract-celebration" role="status" aria-live="polite">
+      <button className="contract-celebration-close" type="button" onClick={onClose} aria-label="Fechar aviso">×</button>
+      <div className="contract-celebration-message">
+        <span className="contract-celebration-check" aria-hidden="true">✓</span>
+        <span>
+          <strong>{hasLoad ? 'Carga contratada com sucesso!' : 'Atendimento contratado com sucesso!'}</strong>
+          <small>{request.nomeMotorista || 'Motorista'} · Solicitação #{request.solicitacaoId}</small>
+        </span>
+      </div>
+      <div className="contract-scene" aria-hidden="true">
+        <span className="contract-road" />
+        <div className="contract-delivery-card">
+          <strong>{request.cargaDescricao || `Solicitação #${request.solicitacaoId}`}</strong>
+          <span>Contratado ✓</span>
+        </div>
+        <div className="contract-truck">
+          <span className="contract-truck-cargo" />
+          <span className="contract-truck-cab" />
+          <i className="contract-truck-wheel wheel-back" />
+          <i className="contract-truck-wheel wheel-front" />
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function RequestDetails({ id, currentUserId, onClose, onUpdated, onContracted }) {
   const [detail, setDetail] = useState(null);
   const [attendants, setAttendants] = useState([]);
   const [loads, setLoads] = useState([]);
@@ -425,8 +706,9 @@ function RequestDetails({ id, currentUserId, onClose, onUpdated }) {
     setBusy(true);
     setError('');
     try {
-      await api(`/Solicitacoes/${id}/status`, { method: 'PATCH', body: JSON.stringify({ novoStatus: status }) });
-      onUpdated();
+      const updatedRequest = await api(`/Solicitacoes/${id}/status`, { method: 'PATCH', body: JSON.stringify({ novoStatus: status }) });
+      if (status === 'Contratado' && onContracted) onContracted(updatedRequest);
+      else onUpdated();
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -482,6 +764,11 @@ function RequestDetails({ id, currentUserId, onClose, onUpdated }) {
 
   const assignedAttendant = attendants.find((attendant) => attendant.atendenteId === detail?.atendenteId);
   const availableLoads = loads.filter((load) => load.status === 'Disponivel' || load.cargaId === detail?.cargaId);
+  const pendingRequiredDocuments = detail?.documentos?.filter(
+    (doc) => doc.obrigatorio && doc.situacao !== 'Validado',
+  ) || [];
+  const pendingRequiredFields = detail?.camposPendentes || [];
+  const cannotHire = pendingRequiredFields.length > 0 || pendingRequiredDocuments.length > 0;
 
   return (
     <Modal title="Detalhes da solicitação" onClose={onClose} wide>
@@ -522,11 +809,14 @@ function RequestDetails({ id, currentUserId, onClose, onUpdated }) {
               </div>
             ))}
           </section>
+          {detail.status === 'EmAnalise' && cannotHire && <Notice kind="warning">
+            Para contratar, preencha os campos obrigatórios e valide todos os documentos obrigatórios.
+          </Notice>}
           <div className="modal-actions spread">
             <span className="muted small-text">Aberta em {formatDate(detail.dataCriacao)}</span>
             <div className="button-row">
               {currentUserId && detail.atendenteId !== currentUserId && <button className="button subtle" disabled={busy} onClick={assumeAttendance}>{busy ? 'Atribuindo…' : 'Assumir atendimento'}</button>}
-              {STATUS_OPTIONS.filter(([value]) => value !== detail.status).map(([value, label]) => <button key={value} className={`button ${value === 'Encerrado' ? 'subtle' : 'primary'}`} disabled={busy} onClick={() => changeStatus(value)}>{busy ? 'Salvando…' : label}</button>)}
+              {STATUS_OPTIONS.filter(([value]) => value !== detail.status).map(([value, label]) => <button key={value} className={`button ${value === 'Encerrado' ? 'subtle' : 'primary'}`} disabled={busy || (value === 'Contratado' && cannotHire)} onClick={() => changeStatus(value)}>{busy ? 'Salvando…' : label}</button>)}
             </div>
           </div>
         </>
@@ -553,7 +843,14 @@ function MotoristasPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedDriver, setSelectedDriver] = useState(null);
   const [selectedRequestId, setSelectedRequestId] = useState(null);
+  const [contractCelebration, setContractCelebration] = useState(null);
   const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    if (!contractCelebration) return undefined;
+    const timeout = window.setTimeout(() => setContractCelebration(null), 6500);
+    return () => window.clearTimeout(timeout);
+  }, [contractCelebration]);
 
   useEffect(() => {
     let active = true;
@@ -605,7 +902,20 @@ function MotoristasPage() {
       </section>
       {showCreate && <CreateDriverModal onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); setTerm(''); setRefresh((value) => value + 1); }} />}
       {selectedDriver && <DriverDetailsModal id={selectedDriver} onClose={() => setSelectedDriver(null)} onOpenRequest={(id) => { setSelectedDriver(null); setSelectedRequestId(id); }} />}
-      {selectedRequestId && <RequestDetails id={selectedRequestId} onClose={() => setSelectedRequestId(null)} onUpdated={() => { setSelectedRequestId(null); setRefresh((value) => value + 1); }} />}
+      {selectedRequestId && <RequestDetails
+        id={selectedRequestId}
+        onClose={() => setSelectedRequestId(null)}
+        onUpdated={() => { setSelectedRequestId(null); setRefresh((value) => value + 1); }}
+        onContracted={(request) => {
+          setSelectedRequestId(null);
+          setContractCelebration(request);
+          setRefresh((value) => value + 1);
+        }}
+      />}
+      {contractCelebration && <ContractCelebration
+        request={contractCelebration}
+        onClose={() => setContractCelebration(null)}
+      />}
     </>
   );
 }
@@ -883,10 +1193,12 @@ function FormularioConfigPage() {
   </>;
 }
 
-function CargasPage({ isAdmin }) {
+function CargasPage({ isAdmin, user }) {
   const [loads, setLoads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [deletingLoadId, setDeletingLoadId] = useState(null);
   const [editingLoad, setEditingLoad] = useState(undefined);
   const [refresh, setRefresh] = useState(0);
 
@@ -912,6 +1224,26 @@ function CargasPage({ isAdmin }) {
     }
   }
 
+  async function deleteLoad(load) {
+    const confirmed = window.confirm(
+      `Excluir a carga C-${String(load.cargaId).padStart(3, '0')} (${load.origem} → ${load.destino})? Essa ação não poderá ser desfeita. Cargas vinculadas a atendimentos são protegidas e não podem ser excluídas.`
+    );
+    if (!confirmed) return;
+
+    setDeletingLoadId(load.cargaId);
+    setError('');
+    setNotice('');
+    try {
+      await api(`/Cargas/${load.cargaId}`, { method: 'DELETE' });
+      setLoads((currentLoads) => currentLoads.filter((item) => item.cargaId !== load.cargaId));
+      setNotice('Carga excluída com sucesso.');
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setDeletingLoadId(null);
+    }
+  }
+
   const availableCount = loads.filter((load) => load.status === 'Disponivel').length;
   const contractedCount = loads.filter((load) => load.status === 'Contratada').length;
   const restrictedCount = loads.filter((load) => load.capacidadeMinimaToneladas != null).length;
@@ -930,6 +1262,7 @@ function CargasPage({ isAdmin }) {
       </div>
       {!isAdmin && <Notice kind="info">O perfil Atendente pode consultar as cargas; cadastro e edição são exclusivos do Administrador.</Notice>}
       {error && <Notice kind="error">{error}</Notice>}
+      {notice && <Notice kind="success">{notice}</Notice>}
       <section className="surface table-surface load-table-surface">
         {loading ? <Loading label="Carregando cargas…" /> : loads.length ? <div className="table-scroll"><table><thead><tr><th>Carga</th><th>Origem</th><th>Destino</th><th>Capacidade mínima</th><th>Status</th>{isAdmin && <th>Ações</th>}</tr></thead><tbody>
           {loads.map((load) => <tr key={load.cargaId}>
@@ -937,7 +1270,7 @@ function CargasPage({ isAdmin }) {
             <td>{load.origem}</td><td>{load.destino}</td>
             <td>{load.capacidadeMinimaToneladas == null ? 'Sem restrição' : `${load.capacidadeMinimaToneladas} t`}</td>
             <td><span className={`status-pill ${load.status === 'Disponivel' ? 'positive' : 'neutral'}`}>{load.status === 'Disponivel' ? 'Disponível' : 'Contratada'}</span></td>
-            {isAdmin && <td><div className="team-actions"><button className="button mini subtle" onClick={() => setEditingLoad(load)}>Editar</button><button className="button mini subtle" onClick={() => changeStatus(load)}>{load.status === 'Disponivel' ? 'Contratar' : 'Reabrir'}</button></div></td>}
+            {isAdmin && <td><div className="team-actions"><button className="button mini subtle" onClick={() => setEditingLoad(load)}>Editar</button><button className="button mini subtle" onClick={() => changeStatus(load)}>{load.status === 'Disponivel' ? 'Contratar' : 'Reabrir'}</button>{load.atendenteId === user?.atendenteId && <button className="button mini danger" disabled={deletingLoadId === load.cargaId} onClick={() => deleteLoad(load)}>{deletingLoadId === load.cargaId ? 'Excluindo…' : 'Excluir'}</button>}</div></td>}
           </tr>)}
         </tbody></table></div> : <EmptyState title="Nenhuma carga cadastrada" detail="As novas cargas aparecerão nesta lista." />}
       </section>
@@ -1162,7 +1495,7 @@ function PublicFormPage() {
 
   return (
     <main className="public-form-page">
-      <header className="public-form-header"><Link className="brand-lockup" to="/"><span className="brand-mark">F</span><span>Fretebot</span></Link><span className="secure-label">● Link seguro</span></header>
+      <header className="public-form-header"><Link className="brand-lockup" to="/"><img className="brand-logo" src={cccLogo} alt="CCC — Central de Cargas e Contratação" /></Link><span className="secure-label">● Link seguro</span></header>
       <section className="public-form-card">
         {loading ? <Loading label="Validando seu link…" /> : error && !form ? <><Notice kind="error">{error}</Notice><p className="muted">Peça ao atendente um novo link de acesso caso ele tenha expirado ou já tenha sido utilizado.</p></> : submitted ? (
           <div className="form-success"><span className="success-check">✓</span><span className="eyebrow">Cadastro enviado</span><h1>Obrigado, recebemos seus dados.</h1><p>A equipe vai analisar as informações e entrar em contato para continuar o atendimento.</p></div>
@@ -1215,7 +1548,7 @@ function PublicFormPage() {
           </>
         )}
       </section>
-      <footer className="public-footer">Fretebot · Captação e gestão de fretes</footer>
+      <footer className="public-footer">CCC · Central de Carga e Contratação</footer>
     </main>
   );
 }
