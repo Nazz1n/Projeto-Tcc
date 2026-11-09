@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { HubConnectionBuilder } from '@microsoft/signalr';
 import { api, clearToken, download, getToken, saveToken } from './api';
+import cccLogo from './assets/ccc-logo.png';
 
 const STATUS_LABELS = {
   NovoContato: 'Novo contato',
@@ -34,9 +35,29 @@ function readUser() {
   }
 }
 
+function readSavedTheme() {
+  try {
+    return localStorage.getItem('fretebot.theme') === 'dark';
+  } catch {
+    return false;
+  }
+}
+
 function App() {
   const [token, setToken] = useState(getToken());
   const [user, setUser] = useState(readUser);
+  const [darkMode, setDarkMode] = useState(readSavedTheme);
+
+  useEffect(() => {
+    const theme = darkMode ? 'dark' : 'light';
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    try {
+      localStorage.setItem('fretebot.theme', theme);
+    } catch {
+      // The selected theme still applies for this session if storage is unavailable.
+    }
+  }, [darkMode]);
 
   const signIn = (result) => {
     saveToken(result.token);
@@ -59,7 +80,7 @@ function App() {
       <Route path="/acesso/:token" element={<PublicFormPage />} />
       <Route path="/form" element={<PublicFormPage />} />
       <Route path="/form/:token" element={<PublicFormPage />} />
-      <Route path="/admin/*" element={token ? <AdminApp user={user} onSignOut={signOut} /> : <Navigate to="/login" replace />} />
+      <Route path="/admin/*" element={token ? <AdminApp user={user} darkMode={darkMode} onToggleDarkMode={() => setDarkMode((value) => !value)} onSignOut={signOut} /> : <Navigate to="/login" replace />} />
       <Route path="/" element={<Navigate to={token ? '/admin' : '/login'} replace />} />
       <Route path="*" element={<Navigate to={token ? '/admin' : '/login'} replace />} />
     </Routes>
@@ -94,11 +115,26 @@ function LoginPage({ onLogin }) {
   return (
     <main className="login-page">
       <section className="login-brand">
-        <div className="brand-lockup"><span className="brand-mark">F</span><span>Fretebot</span></div>
+        <div className="brand-lockup"><img className="brand-logo" src={cccLogo} alt="CCC — Central de Cargas e Contratação" /></div>
         <div>
-          <span className="eyebrow">Plataforma de captação</span>
+          <span className="eyebrow">Central de Carga e Contratação</span>
           <h1>Do primeiro contato à contratação, em um só lugar.</h1>
           <p>Organize motoristas, acompanhe cadastros e conecte sua equipe à operação de fretes.</p>
+        </div>
+        <div className="login-animation" aria-hidden="true">
+          <span className="pixel-crate crate-one" />
+          <span className="pixel-crate crate-two" />
+          <span className="pixel-crate crate-three" />
+          <div className="pixel-truck">
+            <span className="truck-smoke smoke-one" />
+            <span className="truck-smoke smoke-two" />
+            <span className="truck-smoke smoke-three" />
+            <span className="truck-cargo" />
+            <span className="truck-cabin"><span /></span>
+            <span className="truck-wheel wheel-one" />
+            <span className="truck-wheel wheel-two" />
+          </div>
+          <span className="truck-road" />
         </div>
         <div className="login-footnote"><span className="online-dot" /> Painel de gestão de fretes</div>
       </section>
@@ -126,9 +162,21 @@ function LoginPage({ onLogin }) {
   );
 }
 
-function AdminApp({ user, onSignOut }) {
+function AdminApp({ user, darkMode, onToggleDarkMode, onSignOut }) {
   const location = useLocation();
   const isAdmin = (user?.perfil || '').toLowerCase().includes('admin');
+  const profileKey = `fretebot.profilePhoto.${(user?.email || user?.nome || 'local').toLowerCase()}`;
+  const [profilePhoto, setProfilePhoto] = useState(() => {
+    try {
+      return localStorage.getItem(profileKey) || '';
+    } catch {
+      return '';
+    }
+  });
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [profileError, setProfileError] = useState('');
+  const profileMenuRef = useRef(null);
+  const photoInputRef = useRef(null);
   const title = useMemo(() => {
     if (location.pathname.startsWith('/admin/motoristas')) return 'Motoristas';
     if (location.pathname.startsWith('/admin/cargas')) return 'Cargas';
@@ -138,10 +186,68 @@ function AdminApp({ user, onSignOut }) {
     return 'Central de atendimento';
   }, [location.pathname]);
 
+  useEffect(() => {
+    if (!profileMenuOpen) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (!profileMenuRef.current?.contains(event.target)) setProfileMenuOpen(false);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setProfileMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [profileMenuOpen]);
+
+  function saveProfilePhoto(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setProfileError('Escolha uma imagem JPG, PNG ou WEBP.');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setProfileError('A foto deve ter no máximo 2 MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        setProfileError('Não foi possível carregar esta imagem.');
+        return;
+      }
+      try {
+        localStorage.setItem(profileKey, reader.result);
+        setProfilePhoto(reader.result);
+        setProfileError('');
+        setProfileMenuOpen(false);
+      } catch {
+        setProfileError('Não foi possível salvar a foto neste navegador.');
+      }
+    };
+    reader.onerror = () => setProfileError('Não foi possível carregar esta imagem.');
+    reader.readAsDataURL(file);
+  }
+
+  function removeProfilePhoto() {
+    try {
+      localStorage.removeItem(profileKey);
+      setProfilePhoto('');
+      setProfileError('');
+    } catch {
+      setProfileError('Não foi possível remover a foto neste navegador.');
+    }
+  }
+
   return (
     <div className="admin-shell">
       <aside className="sidebar">
-        <Link className="brand-lockup sidebar-brand" to="/admin"><span className="brand-mark">F</span><span>Fretebot</span></Link>
+        <Link className="brand-lockup sidebar-brand" to="/admin"><img className="brand-logo" src={cccLogo} alt="CCC — Central de Cargas e Contratação" /></Link>
         <div className="sidebar-caption">OPERAÇÃO</div>
         <nav className="side-nav">
           <NavLink to="/admin" exact icon="◫">Central de atendimento</NavLink>
@@ -156,7 +262,7 @@ function AdminApp({ user, onSignOut }) {
         </nav>
         <div className="sidebar-bottom">
           <div className="sidebar-user">
-            <span className="avatar">{initials(user?.nome)}</span>
+          <UserAvatar name={user?.nome} photo={profilePhoto} className="avatar" />
             <span className="user-meta"><strong>{user?.nome || 'Atendente'}</strong><small>{user?.perfil || 'Equipe'}</small></span>
           </div>
           <button className="signout-button" onClick={onSignOut} title="Sair" aria-label="Sair">↪</button>
@@ -164,10 +270,41 @@ function AdminApp({ user, onSignOut }) {
       </aside>
       <div className="workspace">
         <header className="topbar">
-          <div><div className="breadcrumb">Fretebot <span>/</span> {title}</div><h1>{title}</h1></div>
+          <div><div className="breadcrumb">CCC <span>/</span> {title}</div><h1>{title}</h1></div>
           <div className="topbar-right">
             <span className="connection-status"><i /> Sessão ativa</span>
-            <span className="avatar top-avatar" title={user?.nome}>{initials(user?.nome)}</span>
+            <div className="profile-menu-anchor" ref={profileMenuRef}>
+              <button
+                type="button"
+                className="profile-trigger"
+                title="Opções do perfil"
+                aria-label="Abrir opções do perfil"
+                aria-haspopup="menu"
+                aria-expanded={profileMenuOpen}
+                onClick={() => { setProfileMenuOpen((open) => !open); setProfileError(''); }}
+              >
+                <UserAvatar name={user?.nome} photo={profilePhoto} className="avatar top-avatar" />
+              </button>
+              {profileMenuOpen && <div className="profile-menu" role="menu" aria-label="Opções do perfil">
+                <button className="profile-menu-item" type="button" role="menuitem" onClick={() => photoInputRef.current?.click()}>
+                  <span className="profile-menu-icon" aria-hidden="true">▧</span>
+                  <span>Definir foto de perfil</span>
+                </button>
+                {profilePhoto && <button className="profile-menu-item" type="button" role="menuitem" onClick={removeProfilePhoto}>
+                  <span className="profile-menu-icon" aria-hidden="true">×</span>
+                  <span>Remover foto</span>
+                </button>}
+                <div className="profile-menu-divider" />
+                <label className="profile-menu-item profile-theme-item" role="menuitem">
+                  <span className="profile-menu-icon" aria-hidden="true">{darkMode ? '☾' : '☼'}</span>
+                  <span>Modo noturno</span>
+                  <input type="checkbox" role="switch" aria-label="Modo noturno" checked={darkMode} onChange={onToggleDarkMode} />
+                </label>
+                {profileError && <p className="profile-menu-error" role="alert">{profileError}</p>}
+                <p className="profile-menu-hint">Foto salva somente neste navegador · JPG, PNG ou WEBP até 2 MB</p>
+              </div>}
+              <input ref={photoInputRef} className="profile-photo-input" type="file" accept="image/jpeg,image/png,image/webp" onChange={saveProfilePhoto} />
+            </div>
           </div>
         </header>
         <main className="page-content">
@@ -183,6 +320,14 @@ function AdminApp({ user, onSignOut }) {
         </main>
       </div>
     </div>
+  );
+}
+
+function UserAvatar({ name, photo, className }) {
+  return (
+    <span className={`${className}${photo ? ' has-photo' : ''}`}>
+      {photo ? <img src={photo} alt="" /> : initials(name)}
+    </span>
   );
 }
 
@@ -1183,7 +1328,7 @@ function PublicFormPage() {
 
   return (
     <main className="public-form-page">
-      <header className="public-form-header"><Link className="brand-lockup" to="/"><span className="brand-mark">F</span><span>Fretebot</span></Link><span className="secure-label">● Link seguro</span></header>
+      <header className="public-form-header"><Link className="brand-lockup" to="/"><img className="brand-logo" src={cccLogo} alt="CCC — Central de Cargas e Contratação" /></Link><span className="secure-label">● Link seguro</span></header>
       <section className="public-form-card">
         {loading ? <Loading label="Validando seu link…" /> : error && !form ? <><Notice kind="error">{error}</Notice><p className="muted">Peça ao atendente um novo link de acesso caso ele tenha expirado ou já tenha sido utilizado.</p></> : submitted ? (
           <div className="form-success"><span className="success-check">✓</span><span className="eyebrow">Cadastro enviado</span><h1>Obrigado, recebemos seus dados.</h1><p>A equipe vai analisar as informações e entrar em contato para continuar o atendimento.</p></div>
@@ -1236,7 +1381,7 @@ function PublicFormPage() {
           </>
         )}
       </section>
-      <footer className="public-footer">Fretebot · Captação e gestão de fretes</footer>
+      <footer className="public-footer">CCC · Central de Carga e Contratação</footer>
     </main>
   );
 }
