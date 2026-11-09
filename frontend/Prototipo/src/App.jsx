@@ -1508,9 +1508,8 @@ function PublicFormPage() {
   async function sendDocument(doc) {
     const file = files[doc.chave];
     if (!file) return;
-        if (file.size > 10 * 1024 * 1024) {
+    if (file.size > 10 * 1024 * 1024) {
       throw new Error(`O arquivo ${file.name} excede o limite de 10 MB.`);
-    
     }
     const body = new FormData();
     body.append('Tipo', doc.chave);
@@ -1579,14 +1578,29 @@ function PublicFormPage() {
               {step === 2 && <section className="public-section">
                 <div className="section-title"><span>3</span><div><h2>Documentos</h2><p>Envie os documentos necessários para análise.</p></div></div>
                 <div className="upload-list">
-                  {form.documentos.map((doc) => <label className="upload-row" key={doc.chave}>
-                    <span className={`upload-state ${doc.estado === 'Validado' ? 'uploaded' : ''}`}>{doc.estado === 'Validado' ? '✓' : '↑'}</span>
-                    <span className="upload-copy"><strong>{doc.rotulo}{doc.obrigatorio && <em>Obrigatório</em>}</strong><small>{files[doc.chave]?.name || (doc.reutilizado ? `Arquivo de outro formulário: ${doc.nomeOriginal}. Se necessário, selecione uma nova versão.` : doc.nomeOriginal || uploadStatus(doc.estado))}</small></span>
-                    <input type="file" accept=".pdf,image/jpeg,image/png" onChange={(event) => setFiles((current) => ({ ...current, [doc.chave]: event.target.files?.[0] || null }))} />
-                    <span className="button subtle small">{files[doc.chave]?.name ? 'Trocar seleção' : doc.nomeOriginal ? 'Substituir arquivo' : 'Escolher arquivo'}</span>
-                  </label>)}
+                  {form.documentos.map((doc) => {
+                    const inputId = `documento-${doc.chave}`;
+                    const selectedFile = files[doc.chave];
+                    return <div className="upload-row" key={doc.chave}>
+                      <input
+                        id={inputId}
+                        className="upload-file-input"
+                        type="file"
+                        accept=".pdf,image/jpeg,image/png"
+                        onChange={(event) => {
+                          const file = event.currentTarget.files?.[0] || null;
+                          setFiles((current) => ({ ...current, [doc.chave]: file }));
+                          event.currentTarget.value = '';
+                        }}
+                      />
+                      <span className={`upload-state ${doc.estado === 'Validado' ? 'uploaded' : ''}`}>{doc.estado === 'Validado' ? '✓' : '↑'}</span>
+                      <span className="upload-copy"><strong>{doc.rotulo}{doc.obrigatorio && <em>Obrigatório</em>}</strong><small>{selectedFile ? `Novo arquivo selecionado: ${selectedFile.name}` : doc.reutilizado ? `Arquivo de outro formulário: ${doc.nomeOriginal}. Se necessário, selecione uma nova versão.` : doc.nomeOriginal || uploadStatus(doc.estado)}</small></span>
+                      <label htmlFor={inputId} className="button subtle small upload-file-button">{selectedFile ? 'Trocar arquivo' : doc.nomeOriginal ? 'Substituir arquivo' : 'Escolher arquivo'}</label>
+                    </div>;
+                  })}
                   {!form.documentos.length && <p className="muted">Não há documentos ativos configurados.</p>}
                 </div>
+                <p className="upload-help">Selecione PDF, JPG ou PNG de até 10 MB. O arquivo novo será enviado ao tocar em “Enviar cadastro”.</p>
               </section>}
               <div className="public-submit">
                 <p>🔒 Seus dados são usados somente para a análise desta solicitação.</p>
