@@ -43,6 +43,15 @@ function readSavedTheme() {
   }
 }
 
+function readHiddenKanbanCards(storageKey) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    return new Set(Array.isArray(stored) ? stored.filter(Number.isInteger) : []);
+  } catch {
+    return new Set();
+  }
+}
+
 function App() {
   const [token, setToken] = useState(getToken());
   const [user, setUser] = useState(readUser);
@@ -311,7 +320,7 @@ function AdminApp({ user, darkMode, onToggleDarkMode, onSignOut }) {
           <Routes>
             <Route index element={<CentralPage user={user} />} />
             <Route path="motoristas" element={<MotoristasPage />} />
-            <Route path="cargas" element={<CargasPage isAdmin={isAdmin} />} />
+            <Route path="cargas" element={<CargasPage isAdmin={isAdmin} user={user} />} />
             {isAdmin && <Route path="relatorios" element={<ReportsPage />} />}
             {isAdmin && <Route path="formulario" element={<FormularioConfigPage />} />}
             {isAdmin && <Route path="equipe" element={<EquipePage />} />}
@@ -341,6 +350,12 @@ function CentralPage({ user }) {
   const [columns, setColumns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [cleanupError, setCleanupError] = useState('');
+  const [cleanupNotice, setCleanupNotice] = useState('');
+  const [cleaningStatus, setCleaningStatus] = useState('');
+  const [contractCelebration, setContractCelebration] = useState(null);
+  const cleanupStorageKey = `ccc.kanban.hidden.${(user?.email || user?.nome || 'local').toLowerCase()}`;
+  const [hiddenCardIds, setHiddenCardIds] = useState(() => readHiddenKanbanCards(cleanupStorageKey));
   const [showNew, setShowNew] = useState(false);
   const [selected, setSelected] = useState(null);
   const [refresh, setRefresh] = useState(0);
@@ -407,6 +422,12 @@ function CentralPage({ user }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!contractCelebration) return undefined;
+    const timeout = window.setTimeout(() => setContractCelebration(null), 6500);
+    return () => window.clearTimeout(timeout);
+  }, [contractCelebration]);
+
   const requests = columns.flatMap((column) => column.solicitacoes || []);
   const totals = requests.length;
   const openCount = columns
@@ -419,9 +440,47 @@ function CentralPage({ user }) {
     .filter((column) => !statusFilter || column.status === statusFilter)
     .map((column) => ({
       ...column,
-      solicitacoes: (column.solicitacoes || []).filter((item) => !priorityFilter || item.prioridade === priorityFilter),
+      solicitacoes: (column.solicitacoes || [])
+        .filter((item) => !hiddenCardIds.has(item.solicitacaoId))
+        .filter((item) => !priorityFilter || item.prioridade === priorityFilter),
     }));
   const refreshBoard = () => setRefresh((value) => value + 1);
+
+  function clearColumn(status, label) {
+    const column = columns.find((item) => item.status === status);
+    const cardsToClear = (column?.solicitacoes || []).filter((item) => !hiddenCardIds.has(item.solicitacaoId));
+    const cardCount = cardsToClear.length;
+    if (!cardCount || cleaningStatus) return;
+
+    const confirmed = window.confirm(
+      `Ocultar ${cardCount} atendimento(s) ${label.toLowerCase()} deste kanban neste navegador? Os registros continuarão salvos no sistema e nos relatórios.`
+    );
+    if (!confirmed) return;
+
+    const nextHiddenIds = new Set(hiddenCardIds);
+    cardsToClear.forEach((item) => nextHiddenIds.add(item.solicitacaoId));
+    let preferenceSaved = true;
+    try {
+      localStorage.setItem(cleanupStorageKey, JSON.stringify([...nextHiddenIds]));
+    } catch {
+      preferenceSaved = false;
+    }
+
+    setCleanupError('');
+    setCleanupNotice('');
+    setCleaningStatus(status);
+    const animationDelay = Math.min(cardCount - 1, 8) * 45 + 520;
+    window.setTimeout(() => {
+      setHiddenCardIds(nextHiddenIds);
+      setCleaningStatus('');
+      setCleanupNotice(cardCount === 1
+        ? `Card da coluna ${label} removido do kanban neste navegador. O atendimento continua salvo no sistema.`
+        : `${cardCount} cards da coluna ${label} removidos do kanban neste navegador. Os atendimentos continuam salvos no sistema.`);
+      if (!preferenceSaved) {
+        setCleanupError('Não foi possível salvar a limpeza neste navegador; os cards poderão voltar ao recarregar a página.');
+      }
+    }, animationDelay);
+  }
 
   return (
     <>
@@ -440,6 +499,12 @@ function CentralPage({ user }) {
         <span className="refresh-stamp">{realtimeState === 'connected' ? 'Atualizações em tempo real ativas' : 'Atualizações automáticas indisponíveis'}</span>
         <button className="button subtle small" onClick={refreshBoard} disabled={loading}>↻ Atualizar</button>
       </div>
+      {cleanupNotice && <div className="cleanup-toast" role="status" aria-live="polite">
+        <span className="cleanup-toast-icon" aria-hidden="true">✓</span>
+        <span>{cleanupNotice}</span>
+        <button type="button" aria-label="Fechar aviso" onClick={() => setCleanupNotice('')}>×</button>
+      </div>}
+      {cleanupError && <Notice kind="error">{cleanupError}</Notice>}
       <div className="board-filters">
         <label className="field compact-field"><span>Filtrar por status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="">Todos os status</option>{columns.map((column) => <option value={column.status} key={column.status}>{column.rotulo}</option>)}</select></label>
         <label className="field compact-field"><span>Filtrar por prioridade</span><select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}><option value="">Todas</option><option>Alta</option><option>Media</option><option>Baixa</option></select></label>
@@ -450,14 +515,29 @@ function CentralPage({ user }) {
       {loading ? <Loading label="Carregando solicitações…" /> : (
         <div className="kanban-board">
           {visibleColumns.map((column, index) => (
-            <section className={`kanban-column ${STATUS_COLORS[index % STATUS_COLORS.length]}`} key={column.status}>
+            <section className={`kanban-column ${STATUS_COLORS[index % STATUS_COLORS.length]}${cleaningStatus === column.status ? ' clearing' : ''}`} key={column.status}>
               <header className="column-heading">
                 <span className="column-indicator" />
                 <h3>{column.rotulo || STATUS_LABELS[column.status] || column.status}</h3>
                 <span className="count-badge">{column.solicitacoes?.length || 0}</span>
+                {['Contratado', 'Encerrado'].includes(column.status) && <button
+                  type="button"
+                  className="button danger small clear-column-button"
+                  disabled={!column.solicitacoes?.length || column.solicitacoes.every((item) => hiddenCardIds.has(item.solicitacaoId)) || Boolean(cleaningStatus)}
+                  onClick={() => clearColumn(column.status, column.rotulo || STATUS_LABELS[column.status])}
+                >
+                  Limpar
+                </button>}
               </header>
               <div className="column-cards">
-                {column.solicitacoes?.map((item) => <RequestCard key={item.solicitacaoId} item={item} status={column.status} onClick={() => setSelected(item)} />)}
+                {column.solicitacoes?.map((item, cardIndex) => <RequestCard
+                  key={item.solicitacaoId}
+                  item={item}
+                  status={column.status}
+                  className={cleaningStatus === column.status ? 'clear-exit' : ''}
+                  style={{ '--archive-index': Math.min(cardIndex, 8) }}
+                  onClick={() => setSelected(item)}
+                />)}
                 {!column.solicitacoes?.length && <div className="empty-column">Nenhuma solicitação nesta etapa</div>}
               </div>
             </section>
@@ -466,14 +546,28 @@ function CentralPage({ user }) {
         </div>
       )}
       {showNew && <StartAtendimentoModal onClose={() => setShowNew(false)} onStarted={() => { setShowNew(false); refreshBoard(); }} />}
-      {selected && <RequestDetails id={selected.solicitacaoId} currentUserId={user?.atendenteId} onClose={() => { setSelected(null); refreshBoard(); }} onUpdated={() => { setSelected(null); refreshBoard(); }} />}
+      {selected && <RequestDetails
+        id={selected.solicitacaoId}
+        currentUserId={user?.atendenteId}
+        onClose={() => { setSelected(null); refreshBoard(); }}
+        onUpdated={() => { setSelected(null); refreshBoard(); }}
+        onContracted={(request) => {
+          setSelected(null);
+          setContractCelebration(request);
+          refreshBoard();
+        }}
+      />}
+      {contractCelebration && <ContractCelebration
+        request={contractCelebration}
+        onClose={() => setContractCelebration(null)}
+      />}
     </>
   );
 }
 
-function RequestCard({ item, status, onClick }) {
+function RequestCard({ item, status, onClick, className = '', style }) {
   return (
-    <button className="request-card" onClick={onClick}>
+    <button className={`request-card ${className}`} style={style} onClick={onClick}>
       <div className="request-card-top"><span className="request-number">#{item.solicitacaoId}</span><span className={`priority ${priorityClass(item.prioridade)}`}>{item.prioridade || 'Sem prioridade'}</span><span className="request-date">{formatDate(item.dataCriacao)}</span></div>
       <strong className="request-name">{item.nomeMotorista || 'Motorista sem nome'}</strong>
       <span className="request-phone">{formatPhone(item.telefone)}</span>
@@ -553,7 +647,36 @@ function StartAtendimentoModal({ onClose, onStarted }) {
   );
 }
 
-function RequestDetails({ id, currentUserId, onClose, onUpdated }) {
+function ContractCelebration({ request, onClose }) {
+  const hasLoad = request.cargaId != null;
+  return (
+    <aside className="contract-celebration" role="status" aria-live="polite">
+      <button className="contract-celebration-close" type="button" onClick={onClose} aria-label="Fechar aviso">×</button>
+      <div className="contract-celebration-message">
+        <span className="contract-celebration-check" aria-hidden="true">✓</span>
+        <span>
+          <strong>{hasLoad ? 'Carga contratada com sucesso!' : 'Atendimento contratado com sucesso!'}</strong>
+          <small>{request.nomeMotorista || 'Motorista'} · Solicitação #{request.solicitacaoId}</small>
+        </span>
+      </div>
+      <div className="contract-scene" aria-hidden="true">
+        <span className="contract-road" />
+        <div className="contract-delivery-card">
+          <strong>{request.cargaDescricao || `Solicitação #${request.solicitacaoId}`}</strong>
+          <span>Contratado ✓</span>
+        </div>
+        <div className="contract-truck">
+          <span className="contract-truck-cargo" />
+          <span className="contract-truck-cab" />
+          <i className="contract-truck-wheel wheel-back" />
+          <i className="contract-truck-wheel wheel-front" />
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function RequestDetails({ id, currentUserId, onClose, onUpdated, onContracted }) {
   const [detail, setDetail] = useState(null);
   const [attendants, setAttendants] = useState([]);
   const [loads, setLoads] = useState([]);
@@ -583,8 +706,9 @@ function RequestDetails({ id, currentUserId, onClose, onUpdated }) {
     setBusy(true);
     setError('');
     try {
-      await api(`/Solicitacoes/${id}/status`, { method: 'PATCH', body: JSON.stringify({ novoStatus: status }) });
-      onUpdated();
+      const updatedRequest = await api(`/Solicitacoes/${id}/status`, { method: 'PATCH', body: JSON.stringify({ novoStatus: status }) });
+      if (status === 'Contratado' && onContracted) onContracted(updatedRequest);
+      else onUpdated();
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -719,7 +843,14 @@ function MotoristasPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedDriver, setSelectedDriver] = useState(null);
   const [selectedRequestId, setSelectedRequestId] = useState(null);
+  const [contractCelebration, setContractCelebration] = useState(null);
   const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    if (!contractCelebration) return undefined;
+    const timeout = window.setTimeout(() => setContractCelebration(null), 6500);
+    return () => window.clearTimeout(timeout);
+  }, [contractCelebration]);
 
   useEffect(() => {
     let active = true;
@@ -771,7 +902,20 @@ function MotoristasPage() {
       </section>
       {showCreate && <CreateDriverModal onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); setTerm(''); setRefresh((value) => value + 1); }} />}
       {selectedDriver && <DriverDetailsModal id={selectedDriver} onClose={() => setSelectedDriver(null)} onOpenRequest={(id) => { setSelectedDriver(null); setSelectedRequestId(id); }} />}
-      {selectedRequestId && <RequestDetails id={selectedRequestId} onClose={() => setSelectedRequestId(null)} onUpdated={() => { setSelectedRequestId(null); setRefresh((value) => value + 1); }} />}
+      {selectedRequestId && <RequestDetails
+        id={selectedRequestId}
+        onClose={() => setSelectedRequestId(null)}
+        onUpdated={() => { setSelectedRequestId(null); setRefresh((value) => value + 1); }}
+        onContracted={(request) => {
+          setSelectedRequestId(null);
+          setContractCelebration(request);
+          setRefresh((value) => value + 1);
+        }}
+      />}
+      {contractCelebration && <ContractCelebration
+        request={contractCelebration}
+        onClose={() => setContractCelebration(null)}
+      />}
     </>
   );
 }
@@ -1049,10 +1193,12 @@ function FormularioConfigPage() {
   </>;
 }
 
-function CargasPage({ isAdmin }) {
+function CargasPage({ isAdmin, user }) {
   const [loads, setLoads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [deletingLoadId, setDeletingLoadId] = useState(null);
   const [editingLoad, setEditingLoad] = useState(undefined);
   const [refresh, setRefresh] = useState(0);
 
@@ -1078,6 +1224,26 @@ function CargasPage({ isAdmin }) {
     }
   }
 
+  async function deleteLoad(load) {
+    const confirmed = window.confirm(
+      `Excluir a carga C-${String(load.cargaId).padStart(3, '0')} (${load.origem} → ${load.destino})? Essa ação não poderá ser desfeita. Cargas vinculadas a atendimentos são protegidas e não podem ser excluídas.`
+    );
+    if (!confirmed) return;
+
+    setDeletingLoadId(load.cargaId);
+    setError('');
+    setNotice('');
+    try {
+      await api(`/Cargas/${load.cargaId}`, { method: 'DELETE' });
+      setLoads((currentLoads) => currentLoads.filter((item) => item.cargaId !== load.cargaId));
+      setNotice('Carga excluída com sucesso.');
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setDeletingLoadId(null);
+    }
+  }
+
   const availableCount = loads.filter((load) => load.status === 'Disponivel').length;
   const contractedCount = loads.filter((load) => load.status === 'Contratada').length;
   const restrictedCount = loads.filter((load) => load.capacidadeMinimaToneladas != null).length;
@@ -1096,6 +1262,7 @@ function CargasPage({ isAdmin }) {
       </div>
       {!isAdmin && <Notice kind="info">O perfil Atendente pode consultar as cargas; cadastro e edição são exclusivos do Administrador.</Notice>}
       {error && <Notice kind="error">{error}</Notice>}
+      {notice && <Notice kind="success">{notice}</Notice>}
       <section className="surface table-surface load-table-surface">
         {loading ? <Loading label="Carregando cargas…" /> : loads.length ? <div className="table-scroll"><table><thead><tr><th>Carga</th><th>Origem</th><th>Destino</th><th>Capacidade mínima</th><th>Status</th>{isAdmin && <th>Ações</th>}</tr></thead><tbody>
           {loads.map((load) => <tr key={load.cargaId}>
@@ -1103,7 +1270,7 @@ function CargasPage({ isAdmin }) {
             <td>{load.origem}</td><td>{load.destino}</td>
             <td>{load.capacidadeMinimaToneladas == null ? 'Sem restrição' : `${load.capacidadeMinimaToneladas} t`}</td>
             <td><span className={`status-pill ${load.status === 'Disponivel' ? 'positive' : 'neutral'}`}>{load.status === 'Disponivel' ? 'Disponível' : 'Contratada'}</span></td>
-            {isAdmin && <td><div className="team-actions"><button className="button mini subtle" onClick={() => setEditingLoad(load)}>Editar</button><button className="button mini subtle" onClick={() => changeStatus(load)}>{load.status === 'Disponivel' ? 'Contratar' : 'Reabrir'}</button></div></td>}
+            {isAdmin && <td><div className="team-actions"><button className="button mini subtle" onClick={() => setEditingLoad(load)}>Editar</button><button className="button mini subtle" onClick={() => changeStatus(load)}>{load.status === 'Disponivel' ? 'Contratar' : 'Reabrir'}</button>{load.atendenteId === user?.atendenteId && <button className="button mini danger" disabled={deletingLoadId === load.cargaId} onClick={() => deleteLoad(load)}>{deletingLoadId === load.cargaId ? 'Excluindo…' : 'Excluir'}</button>}</div></td>}
           </tr>)}
         </tbody></table></div> : <EmptyState title="Nenhuma carga cadastrada" detail="As novas cargas aparecerão nesta lista." />}
       </section>

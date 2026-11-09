@@ -85,6 +85,8 @@ public class CargaService
 
     public async Task<List<CargaRespostaDto>> ListarTodosAsync()
     {
+        await SincronizarCargasContratadasAsync();
+
         var cargas = await _context.Cargas
             .AsNoTracking()
             .OrderByDescending(c => c.DataCadastro)
@@ -101,6 +103,8 @@ public class CargaService
 
     public async Task<List<CargaRespostaDto>> ListarDisponiveisAsync()
     {
+        await SincronizarCargasContratadasAsync();
+
         var cargas = await _context.Cargas
             .AsNoTracking()
             .Where(c => c.Status == StatusCarga.Disponivel)
@@ -110,6 +114,30 @@ public class CargaService
         return cargas
             .Select(MapearResposta)
             .ToList();
+    }
+
+    private async Task SincronizarCargasContratadasAsync()
+    {
+        var cargasPendentes = await _context.Cargas
+            .Where(c => c.Status == StatusCarga.Disponivel &&
+                        c.Solicitacoes.Any(s => s.Status == StatusSolicitacao.Contratado))
+            .ToListAsync();
+
+        if (cargasPendentes.Count == 0)
+            return;
+
+        foreach (var carga in cargasPendentes)
+        {
+            carga.Status = StatusCarga.Contratada;
+            _context.RegistrosAuditoria.Add(new RegistroAuditoria
+            {
+                Acao = "Carga sincronizada com atendimento contratado",
+                Detalhes = $"Carga {carga.CargaId} ({carga.Origem} → {carga.Destino}) marcada como contratada ao consultar as cargas.",
+                DataRegistro = DateTime.UtcNow
+            });
+        }
+
+        await _context.SaveChangesAsync();
     }
 
     // =========================================================
@@ -246,6 +274,14 @@ public class CargaService
             throw new KeyNotFoundException(
                 "Carga não encontrada.");
 
+        if (statusValido == StatusCarga.Disponivel &&
+            await _context.Solicitacoes.AnyAsync(s =>
+                s.CargaId == cargaId && s.Status == StatusSolicitacao.Contratado))
+        {
+            throw new InvalidOperationException(
+                "Esta carga já possui um atendimento contratado e não pode ser reaberta.");
+        }
+
         var statusAnterior = carga.Status;
 
         if (statusAnterior.Equals(
@@ -267,6 +303,35 @@ public class CargaService
             executorId ?? carga.AtendenteId);
 
         return MapearResposta(carga);
+    }
+
+    public async Task ExcluirAsync(int cargaId, int atendenteId)
+    {
+        var carga = await _context.Cargas
+            .FirstOrDefaultAsync(c =>
+                c.CargaId == cargaId && c.AtendenteId == atendenteId);
+
+        if (carga == null)
+            throw new KeyNotFoundException("Carga não encontrada ou não pertence a este administrador.");
+
+        var possuiSolicitacoes = await _context.Solicitacoes
+            .AnyAsync(s => s.CargaId == cargaId);
+        if (possuiSolicitacoes)
+            throw new InvalidOperationException(
+                "Esta carga está vinculada a um atendimento e não pode ser excluída para preservar o histórico.");
+
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+        _context.Cargas.Remove(carga);
+        _context.RegistrosAuditoria.Add(new RegistroAuditoria
+        {
+            AtendenteId = atendenteId,
+            Acao = "Carga excluída",
+            Detalhes = $"Carga {carga.CargaId} excluída. Origem: {carga.Origem}. Destino: {carga.Destino}.",
+            DataRegistro = DateTime.UtcNow
+        });
+
+        await _context.SaveChangesAsync();
+        await transaction.CommitAsync();
     }
 
     // =========================================================

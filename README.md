@@ -68,10 +68,11 @@ Adicione as imagens em docs/img/ e remova os comentários desta seção.
 
 - Login com perfis **Administrador** e **Atendente**.
 - **Central de atendimento** em Kanban, com filtros por status e prioridade e atualização em tempo real via SignalR.
+- Os cards de **Contratado** e **Encerrado** podem ser limpos visualmente por atendente; a preferência fica neste navegador e os registros continuam no sistema e nos relatórios.
 - **Iniciar atendimento** pelo telefone: localiza ou cria o motorista, abre a solicitação e gera o link com a mensagem pronta.
 - **Detalhe da solicitação**: dados do motorista, CPF mascarado, veículo, carga vinculada, compatibilidade de capacidade, atendente responsável, validação e download dos documentos.
 - **Motoristas**: lista com busca por nome, telefone ou placa, ficha completa e histórico de solicitações.
-- **Cargas**: cadastro com origem, destino e capacidade mínima, e controle de disponibilidade.
+- **Cargas**: cadastro com origem, destino e capacidade mínima, controle de disponibilidade, contratação automática ao contratar uma solicitação e exclusão pelo administrador que a criou quando ainda não há atendimentos vinculados.
 - **Formulário e documentos**: o administrador define quais campos e documentos são exigidos e se são obrigatórios.
 - **Equipe e acessos**: cadastro, edição, desativação e reativação de usuários.
 - **Relatórios**: indicadores do funil, taxa de conversão, tempo médio de atendimento e exportação em CSV, com filtro por período.

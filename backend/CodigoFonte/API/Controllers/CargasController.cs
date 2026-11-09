@@ -7,13 +7,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Captacao.Api.Controllers;
 
-// Regra de acesso (RF15 e tela de cargas do protótipo):
-//  - Administrador: cadastra e atualiza cargas (inclusive o status).
-//  - Atendente: apenas consulta.
-//
-// Se no futuro o Atendente precisar marcar uma carga como contratada
-// ao fechar um frete, libere AtualizarStatus para qualquer autenticado
-// removendo o Roles do método.
+// Administradores gerenciam as cargas; atendentes podem apenas consultá-las.
+// A contratação de uma solicitação atualiza automaticamente a carga vinculada.
 [Authorize]
 [ApiController]
 [Route("api/[controller]")]
@@ -172,6 +167,35 @@ public class CargasController : ControllerBase
         catch (ArgumentException ex)
         {
             return BadRequest(new { mensagem = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { mensagem = ex.Message });
+        }
+    }
+
+    // DELETE: api/Cargas/{id}
+    // Um administrador pode excluir apenas cargas próprias e ainda sem atendimentos.
+    [HttpDelete("{id:int}")]
+    [Authorize(Roles = Perfis.Administrador)]
+    public async Task<IActionResult> Excluir(int id)
+    {
+        var atendenteId = User.ObterAtendenteId();
+        if (atendenteId is null)
+            return Unauthorized(new { mensagem = "Não foi possível identificar o administrador." });
+
+        try
+        {
+            await _cargaService.ExcluirAsync(id, atendenteId.Value);
+            return NoContent();
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { mensagem = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { mensagem = ex.Message });
         }
     }
 }
