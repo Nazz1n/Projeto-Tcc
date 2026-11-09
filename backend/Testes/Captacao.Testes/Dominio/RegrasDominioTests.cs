@@ -213,6 +213,19 @@ public class AvaliadorSolicitacaoTests
 
         var cnh = a.Documentos.Single(d => d.Chave == CatalogoFormulario.Cnh);
         Assert.Equal(EstadoDocumento.Validado, cnh.Estado);
+        Assert.True(cnh.Reutilizado);
+    }
+
+    [Fact]
+    public void DocumentoDestaSolicitacao_NaoEhMarcadoComoReutilizado()
+    {
+        var documento = Doc(CatalogoFormulario.Cnh, StatusDocumento.Validado, 1);
+        var solicitacao = Completa(StatusSolicitacao.ProntoParaAnalise);
+
+        var avaliacao = AvaliadorSolicitacao.Avaliar(
+            solicitacao, Config(), new List<Documento> { documento });
+
+        Assert.False(avaliacao.Documentos.Single(d => d.Chave == CatalogoFormulario.Cnh).Reutilizado);
     }
 }
 

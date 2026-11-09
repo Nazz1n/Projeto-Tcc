@@ -684,6 +684,7 @@ function RequestDetails({ id, currentUserId, onClose, onUpdated, onContracted })
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [replacementLink, setReplacementLink] = useState(null);
 
   useEffect(() => {
     setError('');
@@ -762,13 +763,44 @@ function RequestDetails({ id, currentUserId, onClose, onUpdated, onContracted })
     }
   }
 
+  async function generateReplacementLink() {
+    setBusy(true);
+    setError('');
+    setReplacementLink(null);
+    try {
+      setReplacementLink(await api(`/LinksAcesso/solicitacao/${id}`, { method: 'POST' }));
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copyReplacementLink(event) {
+    const input = event.currentTarget.parentElement.querySelector('input');
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API indisponível.');
+      await navigator.clipboard.writeText(replacementLink.urlAcesso);
+      setError('');
+    } catch {
+      input.focus();
+      input.select();
+      input.setSelectionRange(0, input.value.length);
+      setError('O link está selecionado. Use a opção Copiar do seu aparelho.');
+    }
+  }
+
   const assignedAttendant = attendants.find((attendant) => attendant.atendenteId === detail?.atendenteId);
   const availableLoads = loads.filter((load) => load.status === 'Disponivel' || load.cargaId === detail?.cargaId);
   const pendingRequiredDocuments = detail?.documentos?.filter(
     (doc) => doc.obrigatorio && doc.situacao !== 'Validado',
   ) || [];
   const pendingRequiredFields = detail?.camposPendentes || [];
-  const cannotHire = pendingRequiredFields.length > 0 || pendingRequiredDocuments.length > 0;
+  const linkedLoadIsAvailable = detail?.cargaId != null &&
+    loads.some((load) => load.cargaId === detail.cargaId && load.status === 'Disponivel');
+  const cannotHire = pendingRequiredFields.length > 0 ||
+    pendingRequiredDocuments.length > 0 ||
+    !linkedLoadIsAvailable;
 
   return (
     <Modal title="Detalhes da solicitação" onClose={onClose} wide>
@@ -789,15 +821,18 @@ function RequestDetails({ id, currentUserId, onClose, onUpdated, onContracted })
             <div className="detail-item"><span>Atendente responsável</span><strong>{assignedAttendant?.nome || (detail.atendenteId ? `Atendente #${detail.atendenteId}` : 'Não atribuído')}</strong></div>
           </div>
           <div className="association-row">
-            <label className="field"><span>Vincular uma carga</span><select disabled={['Contratado', 'Encerrado'].includes(detail.status)} value={selectedLoadId} onChange={(event) => setSelectedLoadId(event.target.value)}><option value="">Sem carga vinculada</option>{availableLoads.map((load) => <option key={load.cargaId} value={load.cargaId}>{load.origem} → {load.destino}{load.capacidadeMinimaToneladas ? ` · mín. ${load.capacidadeMinimaToneladas} t` : ''}</option>)}</select></label>
+            <label className="field"><span>Vincular uma carga *</span><select aria-required="true" disabled={['Contratado', 'Encerrado'].includes(detail.status)} value={selectedLoadId} onChange={(event) => setSelectedLoadId(event.target.value)}><option value="">Selecione uma carga disponível</option>{availableLoads.map((load) => <option key={load.cargaId} value={load.cargaId}>{load.origem} → {load.destino}{load.capacidadeMinimaToneladas ? ` · mín. ${load.capacidadeMinimaToneladas} t` : ''}{load.status !== 'Disponivel' ? ' · indisponível' : ''}</option>)}</select></label>
             <button className="button subtle" disabled={busy || ['Contratado', 'Encerrado'].includes(detail.status) || selectedLoadId === (detail.cargaId?.toString() || '')} onClick={saveLoad}>{busy ? 'Salvando…' : 'Salvar carga'}</button>
           </div>
+          {!linkedLoadIsAvailable && !['Contratado', 'Encerrado'].includes(detail.status) && <Notice kind="warning">
+            Para contratar, selecione uma carga com status Disponível e clique em “Salvar carga”.
+          </Notice>}
           {detail.camposPendentes?.length > 0 && <Notice kind="warning">Campos pendentes: {detail.camposPendentes.join(', ')}</Notice>}
           <section className="documents-panel">
             <h4>Documentos do formulário</h4>
             {!detail.documentos?.length ? <p className="muted">Nenhum documento configurado.</p> : detail.documentos.map((doc) => (
               <div className="document-row" key={doc.chave}>
-                <div><strong>{doc.rotulo}</strong><small>{doc.nomeOriginal || (doc.obrigatorio ? 'Obrigatório · ainda não enviado' : 'Opcional · ainda não enviado')}</small></div>
+                <div><strong>{doc.rotulo}</strong><small>{doc.reutilizado ? `Reaproveitado de outro formulário: ${doc.nomeOriginal}` : doc.nomeOriginal || (doc.obrigatorio ? 'Obrigatório · ainda não enviado' : 'Opcional · ainda não enviado')}</small></div>
                 <div className="document-actions">
                   <span className={`status-pill ${statusClass(doc.situacao)}`}>{doc.situacao || 'Ausente'}</span>
                   {doc.documentoId && doc.situacao === 'AguardandoValidacao' && <>
@@ -809,7 +844,18 @@ function RequestDetails({ id, currentUserId, onClose, onUpdated, onContracted })
               </div>
             ))}
           </section>
-          {detail.status === 'EmAnalise' && cannotHire && <Notice kind="warning">
+          {!['Contratado', 'Encerrado'].includes(detail.status) && <section className="replacement-link-panel">
+            <p>Precisa enviar uma foto ou arquivo mais recente? Gere um novo link para esta solicitação e peça ao motorista para escolher o novo documento no formulário.</p>
+            <button type="button" className="button subtle small" disabled={busy} onClick={generateReplacementLink}>
+              {busy ? 'Gerando link…' : 'Gerar link para atualizar documentos'}
+            </button>
+            {replacementLink && <>
+              <label className="field"><span>Novo link do formulário</span><div className="copy-field"><input readOnly value={replacementLink.urlAcesso} /><button type="button" className="button subtle small" onClick={copyReplacementLink}>Copiar</button></div></label>
+              <small className="muted small-text">{replacementLink.mensagemSugerida}</small>
+              {replacementLink.urlWhatsApp && <a className="button primary small" href={replacementLink.urlWhatsApp} target="_blank" rel="noreferrer">Enviar pelo WhatsApp ↗</a>}
+            </>}
+          </section>}
+          {detail.status === 'EmAnalise' && (pendingRequiredFields.length > 0 || pendingRequiredDocuments.length > 0) && <Notice kind="warning">
             Para contratar, preencha os campos obrigatórios e valide todos os documentos obrigatórios.
           </Notice>}
           <div className="modal-actions spread">
@@ -1535,9 +1581,9 @@ function PublicFormPage() {
                 <div className="upload-list">
                   {form.documentos.map((doc) => <label className="upload-row" key={doc.chave}>
                     <span className={`upload-state ${doc.estado === 'Validado' ? 'uploaded' : ''}`}>{doc.estado === 'Validado' ? '✓' : '↑'}</span>
-                    <span className="upload-copy"><strong>{doc.rotulo}{doc.obrigatorio && <em>Obrigatório</em>}</strong><small>{files[doc.chave]?.name || doc.nomeOriginal || uploadStatus(doc.estado)}</small></span>
+                    <span className="upload-copy"><strong>{doc.rotulo}{doc.obrigatorio && <em>Obrigatório</em>}</strong><small>{files[doc.chave]?.name || (doc.reutilizado ? `Arquivo de outro formulário: ${doc.nomeOriginal}. Se necessário, selecione uma nova versão.` : doc.nomeOriginal || uploadStatus(doc.estado))}</small></span>
                     <input type="file" accept=".pdf,image/jpeg,image/png" onChange={(event) => setFiles((current) => ({ ...current, [doc.chave]: event.target.files?.[0] || null }))} />
-                    <span className="button subtle small">{files[doc.chave]?.name || 'Escolher arquivo'}</span>
+                    <span className="button subtle small">{files[doc.chave]?.name ? 'Trocar seleção' : doc.nomeOriginal ? 'Substituir arquivo' : 'Escolher arquivo'}</span>
                   </label>)}
                   {!form.documentos.length && <p className="muted">Não há documentos ativos configurados.</p>}
                 </div>

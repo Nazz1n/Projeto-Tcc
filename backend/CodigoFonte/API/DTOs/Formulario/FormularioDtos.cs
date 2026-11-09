@@ -20,6 +20,7 @@ public class FormularioDocumentoStatusDto
     public string Estado { get; set; } = string.Empty;
     public string? NomeOriginal { get; set; }
     public DateTime? DataEnvio { get; set; }
+    public bool Reutilizado { get; set; }
 
     // CRLV é do veículo; os demais são do motorista.
     public bool DoVeiculo { get; set; }

@@ -33,6 +33,7 @@ public class DocumentoAvaliadoDto
     public int? DocumentoId { get; set; }
     public string? NomeOriginal { get; set; }
     public DateTime? DataEnvio { get; set; }
+    public bool Reutilizado { get; set; }
 }
 
 // Janela de detalhes (Figura 10).

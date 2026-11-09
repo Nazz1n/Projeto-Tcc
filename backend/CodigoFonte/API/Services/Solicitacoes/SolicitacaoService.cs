@@ -262,6 +262,17 @@ public class SolicitacaoService
         if (!RegrasStatus.TransicaoManualPermitida(solicitacao.Status, novoStatus, out var motivo))
             throw new ArgumentException(motivo ?? "Transição de status não permitida.");
 
+        if (novoStatus == StatusSolicitacao.Contratado && solicitacao.Carga == null)
+            throw new ArgumentException(
+                "Vincule uma carga disponível à solicitação antes de contratar.");
+
+        if (novoStatus == StatusSolicitacao.Contratado &&
+            solicitacao.Carga!.Status != StatusCarga.Disponivel)
+        {
+            throw new ArgumentException(
+                "A carga vinculada não está mais disponível. Selecione outra carga disponível.");
+        }
+
         if (novoStatus == StatusSolicitacao.Contratado &&
             !RegrasStatus.ContratacaoPermitida(
                 await _regras.AvaliarAsync(solicitacao),
@@ -269,13 +280,6 @@ public class SolicitacaoService
         {
             throw new ArgumentException(
                 motivoContratacao ?? "Não é possível contratar enquanto houver pendências.");
-        }
-
-        if (novoStatus == StatusSolicitacao.Contratado &&
-            solicitacao.Carga != null &&
-            solicitacao.Carga.Status != StatusCarga.Disponivel)
-        {
-            throw new ArgumentException("A carga vinculada não está mais disponível.");
         }
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
@@ -468,7 +472,8 @@ public class SolicitacaoService
                 Situacao = d.Estado.ToString(),
                 DocumentoId = d.DocumentoId,
                 NomeOriginal = d.NomeOriginal,
-                DataEnvio = d.DataEnvio
+                DataEnvio = d.DataEnvio,
+                Reutilizado = d.Reutilizado
             }).ToList()
         };
 

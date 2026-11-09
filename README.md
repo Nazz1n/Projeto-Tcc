@@ -70,7 +70,8 @@ Adicione as imagens em docs/img/ e remova os comentários desta seção.
 - **Central de atendimento** em Kanban, com filtros por status e prioridade e atualização em tempo real via SignalR.
 - Os cards de **Contratado** e **Encerrado** podem ser limpos visualmente por atendente; a preferência fica neste navegador e os registros continuam no sistema e nos relatórios.
 - **Iniciar atendimento** pelo telefone: localiza ou cria o motorista, abre a solicitação e gera o link com a mensagem pronta.
-- **Detalhe da solicitação**: dados do motorista, CPF mascarado, veículo, carga vinculada, compatibilidade de capacidade, atendente responsável, validação e download dos documentos.
+- **Detalhe da solicitação**: dados do motorista, CPF mascarado, veículo, carga vinculada obrigatória para contratação (deve estar disponível), compatibilidade de capacidade, atendente responsável, validação e download dos documentos.
+- Documentos de outros atendimentos podem ser reaproveitados; se o motorista precisar enviar uma versão atualizada depois de usar o link, a equipe pode gerar um novo link no detalhe da solicitação. A nova versão será usada nesta solicitação sem apagar o arquivo anterior.
 - **Motoristas**: lista com busca por nome, telefone ou placa, ficha completa e histórico de solicitações.
 - **Cargas**: cadastro com origem, destino e capacidade mínima, controle de disponibilidade, contratação automática ao contratar uma solicitação, bloqueio de edição após contratação e exclusão pelo administrador que a criou quando ainda não há atendimentos vinculados.
 - **Formulário e documentos**: o administrador define quais campos e documentos são exigidos e se são obrigatórios.
@@ -106,7 +107,7 @@ flowchart LR
 - **Automáticos:** Novo contato, Aguardando preenchimento, Com pendências e Pronto para análise. A API define conforme o formulário e os documentos.
 - **Manuais:** Em análise, Contratado e Encerrado, definidos pela equipe.
 - **Em análise** só vem de *Com pendências* ou *Pronto para análise*. **Contratado** só vem de *Em análise*. **Encerrado** vale para qualquer solicitação não finalizada.
-- Para marcar uma solicitação como **Contratado**, todos os campos obrigatórios precisam estar preenchidos e todos os documentos obrigatórios validados. Documentos opcionais não bloqueiam a contratação.
+- Para marcar uma solicitação como **Contratado**, é obrigatório vincular uma carga ainda disponível, preencher todos os campos obrigatórios e validar todos os documentos obrigatórios. Documentos opcionais não bloqueiam a contratação.
 
 ### Prioridade
 

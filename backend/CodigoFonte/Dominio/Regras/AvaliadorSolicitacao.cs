@@ -24,6 +24,7 @@ public sealed class AvaliacaoDocumento
     public int? DocumentoId { get; init; }
     public string? NomeOriginal { get; init; }
     public DateTime? DataEnvio { get; init; }
+    public bool Reutilizado { get; init; }
 }
 
 public sealed class AvaliacaoSolicitacao
@@ -195,7 +196,8 @@ public static class AvaliadorSolicitacao
         {
             Chave = cfg.Chave, Rotulo = cfg.Rotulo, Obrigatorio = cfg.Obrigatorio,
             Estado = estado, DocumentoId = efetivo?.DocumentoId,
-            NomeOriginal = efetivo?.NomeOriginal, DataEnvio = efetivo?.DataEnvio
+            NomeOriginal = efetivo?.NomeOriginal, DataEnvio = efetivo?.DataEnvio,
+            Reutilizado = efetivo != null && efetivo.SolicitacaoId != s.SolicitacaoId
         };
     }
 

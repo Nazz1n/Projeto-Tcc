@@ -335,6 +335,7 @@ public class FormularioService
                     Estado = d.Estado.ToString(),
                     NomeOriginal = d.NomeOriginal,
                     DataEnvio = d.DataEnvio,
+                    Reutilizado = d.Reutilizado,
                     DoVeiculo = CatalogoFormulario.DocumentoDoVeiculo(d.Chave)
                 })
                 .ToList(),
