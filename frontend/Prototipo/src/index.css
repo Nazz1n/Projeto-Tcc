@@ -565,8 +565,6 @@ html[data-theme='dark'] .contract-delivery-card { background: #21483c; border-co
 html[data-theme='dark'] .contract-delivery-card strong { color: #d3eee3; }
 @media (prefers-reduced-motion: reduce) {
   .contract-celebration { animation: none; }
-  .contract-truck { animation: none; transform: translateX(155px); }
-  .contract-delivery-card { animation: none; opacity: 1; transform: translate(151px, 20px); }
 }
 html[data-theme='dark'] .upload-state.uploaded { color: #8be0c3; background: #1e4038; }
 html[data-theme='dark'] .completion-note { color: #8be0c3; background: #1e4038; }
@@ -656,7 +654,10 @@ html[data-theme='dark'] .profile-menu-error { color: #ffabb2; }
   .form-step { flex: 1; justify-content: center; gap: 4px; padding: 0 5px; font-size: 8px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  /* As animações do caminhão (login e contratação) são decorativas e lentas; ficam de fora desta regra. */
+  *:not(.login-animation *):not(.login-animation):not(.contract-scene *):not(.contract-scene),
+  *:not(.login-animation *):not(.contract-scene *)::before,
+  *:not(.login-animation *):not(.contract-scene *)::after {
     scroll-behavior: auto !important;
     animation-duration: .01ms !important;
     animation-iteration-count: 1 !important;
