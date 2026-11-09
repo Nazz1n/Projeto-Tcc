@@ -662,6 +662,13 @@ html[data-theme='dark'] .profile-menu-error { color: #ffabb2; }
     animation-iteration-count: 1 !important;
     transition-duration: .01ms !important;
   }
+  .login-animation .pixel-truck {
+    animation: truck-drive-reduced 8s ease-in-out infinite alternate !important;
+  }
+}
+@keyframes truck-drive-reduced {
+  from { transform: translateX(0); }
+  to { transform: translateX(70px); }
 }
 .association-row { display: flex; gap: 12px; align-items: flex-end; margin: 16px 0; }
 .association-row .field { flex: 1; }
