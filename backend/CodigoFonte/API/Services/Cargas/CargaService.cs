@@ -219,6 +219,14 @@ public class CargaService
             throw new KeyNotFoundException(
                 "Carga não encontrada.");
 
+        if (carga.Status == StatusCarga.Contratada ||
+            await _context.Solicitacoes.AnyAsync(s =>
+                s.CargaId == cargaId && s.Status == StatusSolicitacao.Contratado))
+        {
+            throw new InvalidOperationException(
+                "Cargas contratadas não podem ser editadas.");
+        }
+
         var origemAnterior = carga.Origem;
         var destinoAnterior = carga.Destino;
         var capacidadeAnterior =

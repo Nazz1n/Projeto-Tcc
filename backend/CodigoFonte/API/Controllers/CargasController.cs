@@ -143,6 +143,10 @@ public class CargasController : ControllerBase
         {
             return BadRequest(new { mensagem = ex.Message });
         }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { mensagem = ex.Message });
+        }
     }
 
     // PATCH: api/Cargas/{id}/status

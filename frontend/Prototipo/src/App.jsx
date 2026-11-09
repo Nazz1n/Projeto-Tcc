@@ -1270,7 +1270,12 @@ function CargasPage({ isAdmin, user }) {
             <td>{load.origem}</td><td>{load.destino}</td>
             <td>{load.capacidadeMinimaToneladas == null ? 'Sem restrição' : `${load.capacidadeMinimaToneladas} t`}</td>
             <td><span className={`status-pill ${load.status === 'Disponivel' ? 'positive' : 'neutral'}`}>{load.status === 'Disponivel' ? 'Disponível' : 'Contratada'}</span></td>
-            {isAdmin && <td><div className="team-actions"><button className="button mini subtle" onClick={() => setEditingLoad(load)}>Editar</button><button className="button mini subtle" onClick={() => changeStatus(load)}>{load.status === 'Disponivel' ? 'Contratar' : 'Reabrir'}</button>{load.atendenteId === user?.atendenteId && <button className="button mini danger" disabled={deletingLoadId === load.cargaId} onClick={() => deleteLoad(load)}>{deletingLoadId === load.cargaId ? 'Excluindo…' : 'Excluir'}</button>}</div></td>}
+            {isAdmin && <td><div className="team-actions">{load.status === 'Contratada'
+              ? <span className="muted small-text" title="Cargas contratadas não podem ser editadas">Edição bloqueada</span>
+              : <button className="button mini subtle" onClick={() => setEditingLoad(load)}>Editar</button>}
+              <button className="button mini subtle" onClick={() => changeStatus(load)}>{load.status === 'Disponivel' ? 'Contratar' : 'Reabrir'}</button>
+              {load.atendenteId === user?.atendenteId && <button className="button mini danger" disabled={deletingLoadId === load.cargaId} onClick={() => deleteLoad(load)}>{deletingLoadId === load.cargaId ? 'Excluindo…' : 'Excluir'}</button>}
+            </div></td>}
           </tr>)}
         </tbody></table></div> : <EmptyState title="Nenhuma carga cadastrada" detail="As novas cargas aparecerão nesta lista." />}
       </section>

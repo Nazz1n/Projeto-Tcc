@@ -72,7 +72,7 @@ Adicione as imagens em docs/img/ e remova os comentários desta seção.
 - **Iniciar atendimento** pelo telefone: localiza ou cria o motorista, abre a solicitação e gera o link com a mensagem pronta.
 - **Detalhe da solicitação**: dados do motorista, CPF mascarado, veículo, carga vinculada, compatibilidade de capacidade, atendente responsável, validação e download dos documentos.
 - **Motoristas**: lista com busca por nome, telefone ou placa, ficha completa e histórico de solicitações.
-- **Cargas**: cadastro com origem, destino e capacidade mínima, controle de disponibilidade, contratação automática ao contratar uma solicitação e exclusão pelo administrador que a criou quando ainda não há atendimentos vinculados.
+- **Cargas**: cadastro com origem, destino e capacidade mínima, controle de disponibilidade, contratação automática ao contratar uma solicitação, bloqueio de edição após contratação e exclusão pelo administrador que a criou quando ainda não há atendimentos vinculados.
 - **Formulário e documentos**: o administrador define quais campos e documentos são exigidos e se são obrigatórios.
 - **Equipe e acessos**: cadastro, edição, desativação e reativação de usuários.
 - **Relatórios**: indicadores do funil, taxa de conversão, tempo médio de atendimento e exportação em CSV, com filtro por período.
